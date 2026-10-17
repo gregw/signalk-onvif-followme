@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {chromium} = require('playwright');
-const {startDevServer} = require('../sim/dev-server');
+const {startDevServer, DEFAULT_RESOURCES} = require('../sim/dev-server');
 
 const SHOT_DIR = process.env.SHOT_DIR;
 let browser;
@@ -291,6 +291,79 @@ test('capture without any zone goes to the camera set; fixed zone view; override
         assert.equal(st.zones[0].priority, 5);
         assert.deepEqual(st.zones[0].mode.ptz, {x: -0.3, y: 0.2, zoom: 0});
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'fixed.png'), fullPage: true});
+        assert.deepEqual(errors, []);
+    } finally {
+        await ctx.close();
+        await fresh.close();
+    }
+});
+
+test('test aim at any waypoint, re-read each time it is tested; capture re-reads too', async () => {
+    const resources = JSON.parse(JSON.stringify(DEFAULT_RESOURCES));
+    const move = (id, lon, lat) => (resources.waypoints[id].feature.geometry.coordinates = [lon, lat]);
+    const fresh = await startDevServer({resources});
+    const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
+    try {
+        const page = await ctx.newPage();
+        const errors = [];
+        page.on('pageerror', (e) => errors.push(e.message));
+        await page.goto(fresh.url);
+        const cf = page.locator('#cameraForm');
+        await cf.locator('[name=hostname]').fill('192.0.2.64');
+        await cf.locator('[name=poseWaypoint]').selectOption({label: 'Camera'});
+        await cf.locator('[name=height]').fill('30');
+        await page.click('text=Save camera');
+        await page.locator('#cameraMsg', {hasText: 'Saved'}).waitFor();
+        await page.locator('#zoneAdd [name=region]').selectOption({label: 'Harbour'});
+        await page.click('#zoneAddBtn');
+        await page.locator('#zoneMsg', {hasText: 'Added Harbour'}).waitFor();
+
+        // Two samples at different pans.
+        const goto = async (x) => {
+            await page.fill('#absForm [name=x]', String(x));
+            await page.fill('#absForm [name=y]', '-0.2');
+            await page.fill('#absForm [name=zoom]', '0.3');
+            await page.click('#absForm button[type=submit]');
+            await page.locator('#status', {hasText: `pan ${x.toFixed(3)}`}).waitFor();
+            await page.locator('#status', {hasText: 'IDLE'}).waitFor();
+        };
+        await goto(0.1);
+        await page.locator('#calForm [name=waypoint]').selectOption({label: 'Pile 7'});
+        await page.click('#captureBtn');
+        await page.locator('#calMsg', {hasText: 'Captured Pile 7'}).waitFor();
+        // Moved in Freeboard after the page loaded: capture must use the new position.
+        move('wp-mouth', 153.205, -27.41);
+        await goto(0.4);
+        await page.locator('#calForm [name=waypoint]').selectOption({label: 'Harbour mouth'});
+        await page.click('#captureBtn');
+        await page.locator('#calMsg', {hasText: 'Captured Harbour mouth'}).waitFor();
+        const st = await (await fetch(fresh.api + '/state')).json();
+        const cal = await (await fetch(`${fresh.api}/calibration/${st.cameras[0].calibrationId}`)).json();
+        assert.equal(cal.samples.find((s) => s.name === 'Harbour mouth').longitude, 153.205);
+
+        // Test aim at a waypoint that is not a calibration point, inside the zone.
+        resources.waypoints['wp-test'] = {
+            name: 'Test boat',
+            feature: {type: 'Feature', geometry: {type: 'Point', coordinates: [153.2, -27.405]}}
+        };
+        await page.click('#refreshWpBtn');
+        await page.locator('#aimForm [name=waypoint]').selectOption({label: 'Test boat'});
+        await page.locator('#aimMsg', {hasText: 'Test boat: zone Harbour (follow)'}).waitFor();
+        const pan1 = Number(/pan (-?[\d.]+)/.exec(await page.locator('#aimMsg').textContent())[1]);
+        assert.ok(pan1 > 0.1 && pan1 < 0.4, `pan between the samples: ${pan1}`);
+        await page.locator('#status', {hasText: `pan ${pan1.toFixed(3)}`}).waitFor();
+
+        // Moved outside the zone in Freeboard; Test again re-reads it.
+        move('wp-test', 153.3, -27.3);
+        await page.click('#aimBtn');
+        await page.locator('#aimMsg', {hasText: 'Test boat: outside all zones'}).waitFor();
+        // And back inside, nearer the second sample.
+        move('wp-test', 153.205, -27.409);
+        await page.click('#aimBtn');
+        await page.locator('#aimMsg', {hasText: 'zone Harbour'}).waitFor();
+        const pan2 = Number(/pan (-?[\d.]+)/.exec(await page.locator('#aimMsg').textContent())[1]);
+        assert.ok(pan2 > pan1, `moved towards the 0.4 sample: ${pan1} -> ${pan2}`);
+        if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'aim.png'), fullPage: true});
         assert.deepEqual(errors, []);
     } finally {
         await ctx.close();

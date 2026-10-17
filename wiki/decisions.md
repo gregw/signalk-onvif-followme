@@ -51,3 +51,23 @@ the zone is saved again. A region is therefore required, and a camera has at mos
 per region. Saving a zone re-copies the region's current polygon and name; if the region
 was deleted in Freeboard, the copy is kept. Older state files lose their free text zone
 names on load, and any zone without a region is dropped (logged).
+
+## 2026-10-17: Calibration model (lib/engine/calibration.js)
+
+1D piecewise linear, as the brief says, with two refinements:
+
+- tilt is interpolated against the depression angle atan(height / range), not range. For a
+  level mount tilt is close to linear in that angle and strongly non-linear in range, so
+  fewer samples are needed. With camera height 0 it falls back to range.
+- pan is unwrapped across north (bearings) and across the camera's +-1 seam (pan values),
+  so a sampled arc through either stays continuous.
+
+Outside the sampled arc pan extrapolates linearly from the end segment; tilt and zoom hold
+the end values. Both are flagged in the result. Two samples at distinct bearings minimum.
+
+## 2026-10-17: Test aim
+
+`POST /cameras/:id/aim-test` picks the zone for a single position (containment, then
+priority; no hold) and moves the camera as followme would. The webapp offers every
+waypoint and re-reads it from Signal K on each test (and on each capture), so a waypoint
+can be moved in Freeboard and tested again without reloading.

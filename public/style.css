@@ -401,3 +401,11 @@ input.narrow {
     gap: 6px;
     font-size: 13px;
 }
+.testaim {
+    margin-top: 6px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+}
+.testaim select {
+    min-width: 180px;
+}

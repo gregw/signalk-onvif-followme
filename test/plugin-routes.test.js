@@ -21,8 +21,11 @@ async function call(method, p, body) {
 
 /** Poll status until the fake camera reports IDLE. */
 async function settle() {
+    return settleCam('apt');
+}
+async function settleCam(id) {
     for (let i = 0; i < 100; i++) {
-        const st = await call('GET', '/camera/apt/status');
+        const st = await call('GET', `/camera/${id}/status`);
         if (st.body.moveStatus === 'IDLE') return st.body;
         await new Promise((r) => setTimeout(r, 50));
     }
@@ -159,6 +162,83 @@ test('fixed mode zone: capture the current view and go back to it', async () => 
     assert.equal((await call('PUT', '/settings', {holdS: 3})).body.holdS, 3);
     assert.equal((await call('PUT', '/settings', {holdS: 'x'})).status, 400);
     await call('DELETE', `/zones/${z.body.id}`);
+});
+
+test('aim test: zone choice, calibration aim, fixed view, outside, errors', async () => {
+    await call('PUT', '/cameras/aim', {...CAMERA, conn: {...CAMERA.conn, hostname: 'aimcam'}});
+    const st = await call('GET', '/state');
+    const calId = st.body.cameras.find((c) => c.id === 'aim').calibrationId;
+    const sq = (lon0, lat0, d) => ({
+        type: 'Polygon',
+        coordinates: [
+            [
+                [lon0, lat0],
+                [lon0 + d, lat0],
+                [lon0 + d, lat0 - d],
+                [lon0, lat0 - d],
+                [lon0, lat0]
+            ]
+        ]
+    });
+    // Camera at -27.4, 153.19. Follow zone east of it; small fixed zone inside, higher priority.
+    const follow = await call('POST', '/zones', {
+        cameraId: 'aim',
+        geometry: {ref: 'r-f', refName: 'East', polygon: sq(153.195, -27.38, 0.04)}
+    });
+    const fixed = await call('POST', '/zones', {
+        cameraId: 'aim',
+        priority: 0,
+        mode: {type: 'fixed'},
+        geometry: {ref: 'r-x', refName: 'Close', polygon: sq(153.195, -27.398, 0.004)}
+    });
+
+    // Too few samples for followme.
+    let r = await call('POST', '/cameras/aim/aim-test', {latitude: -27.39, longitude: 153.21});
+    assert.equal(r.status, 409);
+    assert.match(r.body.error, /at least 2/);
+
+    // Two samples: pan 0 at bearing ~45, pan 0.5 at bearing ~135 (east side).
+    const cam = () => srv.cameras[srv.cameras.length - 1].adapter;
+    for (const [lat, lon, x] of [
+        [-27.39, 153.2, 0],
+        [-27.41, 153.2, 0.5]
+    ]) {
+        await call('POST', '/camera/aim/move', {mode: 'absolute', x, y: -0.2, zoom: 0.3});
+        await settleCam('aim');
+        await call('POST', `/calibration/${calId}`, {latitude: lat, longitude: lon});
+    }
+    r = await call('POST', '/cameras/aim/aim-test', {latitude: -27.4, longitude: 153.205});
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.zone.name, 'East');
+    assert.equal(r.body.moved, true);
+    assert.ok(r.body.ptz.x > 0.2 && r.body.ptz.x < 0.3, `due east between the samples: ${r.body.ptz.x}`);
+    assert.deepEqual(
+        cam()
+            .calls.filter((c) => c[0] === 'absoluteMove')
+            .pop()[1],
+        r.body.ptz
+    );
+
+    // Fixed zone wins by priority; no view yet is an error, then its view.
+    r = await call('POST', '/cameras/aim/aim-test', {latitude: -27.4, longitude: 153.197});
+    assert.equal(r.status, 409);
+    assert.match(r.body.error, /no view/);
+    await call('POST', '/camera/aim/move', {mode: 'absolute', x: -0.7, y: 0.1, zoom: 0});
+    await settleCam('aim');
+    await call('POST', `/zones/${fixed.body.id}/view`);
+    r = await call('POST', '/cameras/aim/aim-test', {latitude: -27.4, longitude: 153.197});
+    assert.equal(r.body.zone.name, 'Close');
+    assert.deepEqual(r.body.ptz, {x: -0.7, y: 0.1, zoom: 0});
+
+    // Outside every zone: nothing moves.
+    const n = cam().calls.length;
+    r = await call('POST', '/cameras/aim/aim-test', {latitude: -27.3, longitude: 153.0});
+    assert.deepEqual([r.body.zone, r.body.moved], [null, false]);
+    assert.equal(cam().calls.filter((c, i) => i >= n && c[0] === 'absoluteMove').length, 0);
+    assert.equal((await call('POST', '/cameras/aim/aim-test', {latitude: 'x'})).status, 400);
+
+    await call('DELETE', `/zones/${follow.body.id}`);
+    await call('DELETE', `/zones/${fixed.body.id}`);
 });
 
 test('stopped plugin answers 503', async () => {

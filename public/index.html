@@ -93,6 +93,20 @@
                 </form>
                 <p class="hint small">Pick a waypoint, centre it under the cross hairs, then capture.</p>
                 <div id="calMsg" class="msg"></div>
+                <form id="aimForm" class="row testaim">
+                    <label
+                        >Test aim at waypoint
+                        <select name="waypoint"></select>
+                    </label>
+                    <button
+                        type="submit"
+                        id="aimBtn"
+                        title="Re-reads the waypoint, so move it in Freeboard and test again"
+                    >
+                        Test
+                    </button>
+                </form>
+                <div id="aimMsg" class="msg mono small"></div>
                 <div class="tablewrap">
                     <table id="samples">
                         <thead>

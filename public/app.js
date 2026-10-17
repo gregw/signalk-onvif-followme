@@ -102,6 +102,20 @@
         const c = w && w.feature && w.feature.geometry && w.feature.geometry.coordinates;
         return Array.isArray(c) ? {latitude: c[1], longitude: c[0]} : null;
     };
+    /**
+     * Re-read one waypoint from Signal K: it may have been moved in Freeboard since the list
+     * was loaded. Updates the cached copy; falls back to it if the read fails.
+     */
+    async function freshWaypoint(id) {
+        try {
+            const w = await api('GET', `${RES}/waypoints/${encodeURIComponent(id)}`);
+            if (w && w.feature) state.waypoints[id] = {...state.waypoints[id], ...w};
+        } catch (err) {
+            if (err.status === 401) throw err;
+        }
+        return state.waypoints[id];
+    }
+
     const byName = (coll) => Object.entries(coll).sort((a, b) => (a[1].name || a[0]).localeCompare(b[1].name || b[0]));
 
     function fillSelect(sel, entries, {blank, selected} = {}) {
@@ -652,13 +666,51 @@
     function renderWaypointSelect() {
         const f = $('#calForm');
         const prev = f.waypoint.value;
-        fillSelect(
-            f.waypoint,
-            byName(state.waypoints).map(([id, w]) => [id, w.name || id]),
-            {blank: '(choose a waypoint)', selected: prev}
-        );
+        const options = byName(state.waypoints).map(([id, w]) => [id, w.name || id]);
+        fillSelect(f.waypoint, options, {blank: '(choose a waypoint)', selected: prev});
+        const a = $('#aimForm').waypoint;
+        fillSelect(a, options, {blank: '(choose a waypoint)', selected: a.value});
         updateWpInfo();
     }
+
+    // ---- Test aim: what the camera would do with the boat at a waypoint
+
+    async function testAim() {
+        const id = $('#aimForm').waypoint.value;
+        if (!id || !state.cameraId) return;
+        msg('#aimMsg', 'Aiming...');
+        try {
+            const w = await freshWaypoint(id);
+            const p = wpPos(w);
+            if (!p) return msg('#aimMsg', 'Waypoint has no position.', 'bad');
+            const r = await api('POST', `/cameras/${encodeURIComponent(state.cameraId)}/aim-test`, p);
+            const where = `bearing ${fmtBearing(r.bearing)}  range ${fmtRange(r.range)}`;
+            if (!r.zone) {
+                msg(
+                    '#aimMsg',
+                    `${w.name || id}: outside all zones, the camera would be released (not moved). ${where}`
+                );
+                return;
+            }
+            const o = r.outside || {};
+            const flags = [o.pan && 'pan extrapolated', o.tilt && 'tilt held', o.zoom && 'zoom held'].filter(Boolean);
+            msg(
+                '#aimMsg',
+                `${w.name || id}: zone ${r.zone.name} (${r.zone.mode === 'fixed' ? 'fixed' : 'follow'})  ` +
+                    `pan ${fmtN(r.ptz.x)} tilt ${fmtN(r.ptz.y)} zoom ${fmtN(r.ptz.zoom)}  ${where}` +
+                    (flags.length ? `  (${flags.join(', ')}: outside the calibrated range)` : ''),
+                flags.length ? 'bad' : 'ok'
+            );
+        } catch (err) {
+            msg('#aimMsg', `${err.message}`, 'bad');
+        }
+    }
+
+    $('#aimForm').waypoint.addEventListener('change', testAim);
+    $('#aimForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        testAim();
+    });
 
     const zoneNames = (ids) =>
         ids
@@ -696,11 +748,12 @@
         e.preventDefault();
         const f = e.target;
         const id = f.waypoint.value;
-        const p = wpPos(state.waypoints[id]);
         const t = calTarget();
         if (!t) return msg('#calMsg', 'Save a camera first.', 'bad');
-        if (!p) return msg('#calMsg', 'Choose a waypoint.', 'bad');
+        if (!id) return msg('#calMsg', 'Choose a waypoint.', 'bad');
         try {
+            const p = wpPos(await freshWaypoint(id));
+            if (!p) return msg('#calMsg', 'Waypoint has no position.', 'bad');
             const s = await api('POST', `/calibration/${t.id}`, {
                 waypointId: id,
                 name: state.waypoints[id].name,
