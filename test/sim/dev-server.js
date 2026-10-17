@@ -82,6 +82,24 @@ const DEFAULT_RESOURCES = {
         'wp-cam': {name: 'Camera', feature: {type: 'Feature', geometry: {type: 'Point', coordinates: [153.19, -27.4]}}}
     },
     regions: {
+        'rg-close': {
+            name: 'Close in',
+            feature: {
+                type: 'Feature',
+                geometry: {
+                    type: 'Polygon',
+                    coordinates: [
+                        [
+                            [153.19, -27.398],
+                            [153.194, -27.398],
+                            [153.194, -27.402],
+                            [153.19, -27.402],
+                            [153.19, -27.398]
+                        ]
+                    ]
+                }
+            }
+        },
         'rg-harbour': {
             name: 'Harbour',
             feature: {

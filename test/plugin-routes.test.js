@@ -73,7 +73,10 @@ test('zone, capture into the camera set, derived bearing/range, goto, geometry q
             ]
         ]
     };
-    const z = await call('POST', '/zones', {name: 'Harbour', cameraId: 'apt', geometry: {ref: 'rg-harbour', polygon}});
+    const z = await call('POST', '/zones', {
+        cameraId: 'apt',
+        geometry: {ref: 'rg-harbour', refName: 'Harbour', polygon}
+    });
     assert.equal(z.status, 200);
     const zoneId = z.body.id;
     const st = await call('GET', '/state');
@@ -112,7 +115,8 @@ test('zone, capture into the camera set, derived bearing/range, goto, geometry q
     assert.equal((await call('GET', '/geometry?latitude=x')).status, 400);
 
     // Override set for the zone.
-    const ov = await call('PUT', `/zones/${zoneId}`, {name: 'Harbour', cameraId: 'apt', calibrationOverride: true});
+    const ov = await call('PUT', `/zones/${zoneId}`, {cameraId: 'apt', calibrationOverride: true});
+    assert.equal(ov.body.geometry.refName, 'Harbour');
     assert.ok(ov.body.calibrationId && ov.body.calibrationId !== calId);
     const ovCal = await call('GET', `/calibration/${ov.body.calibrationId}`);
     assert.deepEqual(ovCal.body.owner, {type: 'zone', id: zoneId});
@@ -124,7 +128,23 @@ test('zone, capture into the camera set, derived bearing/range, goto, geometry q
 });
 
 test('fixed mode zone: capture the current view and go back to it', async () => {
-    const z = await call('POST', '/zones', {name: 'Close', cameraId: 'apt', mode: {type: 'fixed'}});
+    const polygon = {
+        type: 'Polygon',
+        coordinates: [
+            [
+                [153.19, -27.39],
+                [153.2, -27.39],
+                [153.2, -27.4],
+                [153.19, -27.39]
+            ]
+        ]
+    };
+    assert.equal((await call('POST', '/zones', {cameraId: 'apt', mode: {type: 'fixed'}})).status, 400);
+    const z = await call('POST', '/zones', {
+        cameraId: 'apt',
+        mode: {type: 'fixed'},
+        geometry: {ref: 'rg-close', refName: 'Close in', polygon}
+    });
     assert.equal(z.body.mode.ptz, null);
     assert.equal((await call('POST', `/zones/${z.body.id}/view/goto`)).status, 400);
     await call('POST', '/camera/apt/move', {mode: 'absolute', x: -0.2, y: 0.1, zoom: 0});

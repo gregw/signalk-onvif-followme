@@ -424,6 +424,9 @@
         return state.zones.find((z) => z.id === state.zoneId) || null;
     }
 
+    /** A zone is named by its region (name snapshotted when the region was assigned). */
+    const zoneName = (z) => (z && z.geometry && z.geometry.refName) || '(no region)';
+
     const fmtPtz = (v) => (v ? `pan ${fmtN(v.x)} tilt ${fmtN(v.y)} zoom ${fmtN(v.zoom)}` : 'not set');
 
     function renderZones() {
@@ -432,31 +435,24 @@
             f.zone,
             state.zones.map((z) => [
                 z.id,
-                `${z.name} (${z.mode.type === 'fixed' ? 'fixed' : 'follow'}, p${z.priority})`
+                `${zoneName(z)} (${z.mode.type === 'fixed' ? 'fixed' : 'follow'}, p${z.priority})`
             ]),
             {blank: '(new zone)', selected: state.zoneId || ''}
         );
         const z = zone();
-        fillSelect(
-            f.region,
-            byName(state.regions).map(([id, r]) => [id, r.name || id]),
-            {blank: '(none yet)', selected: z && z.geometry ? z.geometry.ref || '' : ''}
-        );
-        f.name.value = z ? z.name : 'Zone ' + (state.zones.length + 1);
+        const regions = byName(state.regions).map(([id, r]) => [id, r.name || id]);
+        // A zone whose region was since deleted in Freeboard keeps its copied polygon.
+        const gone = z && !state.regions[z.geometry.ref];
+        fillSelect(f.region, regions, {
+            blank: gone ? `${zoneName(z)} (region deleted, polygon kept)` : '(choose a region)',
+            selected: z && !gone ? z.geometry.ref : ''
+        });
         f.priority.value = z ? z.priority : '';
         f.mode.value = z ? z.mode.type : 'followme';
         f.override.checked = !!(z && z.calibrationId);
         $('#zoneDeleteBtn').disabled = !z;
         renderZoneMode();
-        const g = z && z.geometry;
-        msg(
-            '#zoneMsg',
-            g
-                ? `Polygon: ${g.refName || g.ref || 'inline'} (${g.polygon.type}), copied when saved`
-                : z
-                  ? 'No region assigned'
-                  : ''
-        );
+        msg('#zoneMsg', z ? `Polygon copied from region "${zoneName(z)}" (${z.geometry.polygon.type})` : '');
         const st = state.settings;
         f.holdS.value = st.holdS;
     }
@@ -495,15 +491,16 @@
         if (!state.cameraId) return msg('#zoneMsg', 'Save a camera first.', 'bad');
         const regionId = f.region.value;
         const region = state.regions[regionId];
+        if (!state.zoneId && !region) return msg('#zoneMsg', 'Choose a region for the zone.', 'bad');
         const body = {
-            name: f.name.value,
             cameraId: state.cameraId,
             priority: f.priority.value === '' ? undefined : Number(f.priority.value),
             mode: {type: f.mode.value},
             calibrationOverride: f.override.checked,
-            // A region picked now is copied in; otherwise the stored polygon is kept.
+            // The picked region's polygon and name are copied in on every save, so saving again
+            // picks up edits made to the region in Freeboard. Deleted region: keep the copy.
             geometry: region
-                ? {frame: 'absolute', ref: regionId, refName: region.name, polygon: region.feature.geometry}
+                ? {frame: 'absolute', ref: regionId, refName: region.name || regionId, polygon: region.feature.geometry}
                 : undefined
         };
         try {
@@ -532,7 +529,7 @@
     $('#zoneDeleteBtn').addEventListener('click', async () => {
         const z = zone();
         const extra = z && z.calibrationId ? ' and its own calibration samples' : '';
-        if (!z || !confirm(`Delete zone "${z.name}"${extra}?`)) return;
+        if (!z || !confirm(`Delete zone "${zoneName(z)}"${extra}?`)) return;
         try {
             await api('DELETE', `/zones/${z.id}`);
             state.zones = state.zones.filter((x) => x.id !== z.id);
@@ -561,7 +558,7 @@
 
     function calTarget() {
         const z = zone();
-        if (z && z.calibrationId) return {id: z.calibrationId, label: `zone "${z.name}" (override)`};
+        if (z && z.calibrationId) return {id: z.calibrationId, label: `zone "${zoneName(z)}" (override)`};
         const c = camera();
         return c && c.calibrationId ? {id: c.calibrationId, label: `camera "${c.name || c.id}"`} : null;
     }
@@ -579,8 +576,9 @@
 
     const zoneNames = (ids) =>
         ids
-            .map((id) => (state.zones.find((z) => z.id === id) || {}).name)
+            .map((id) => state.zones.find((z) => z.id === id))
             .filter(Boolean)
+            .map(zoneName)
             .join(', ') || 'none';
 
     async function updateWpInfo() {

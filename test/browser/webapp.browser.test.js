@@ -94,11 +94,11 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
 
     // Zone from a Freeboard region.
     const zf = page.locator('#zoneForm');
-    await zf.locator('[name=name]').fill('Harbour');
     await zf.locator('[name=region]').selectOption({label: 'Harbour'});
     await page.click('text=Save zone');
     await page.locator('#zoneMsg', {hasText: 'Saved'}).waitFor();
-    await page.locator('#zoneMsg', {hasText: 'Polygon: Harbour'}).waitFor();
+    await page.locator('#zoneMsg', {hasText: 'Polygon copied from region "Harbour"'}).waitFor();
+    assert.match(await page.locator('#zoneForm [name=zone] option:checked').textContent(), /^Harbour \(follow, p1\)$/);
 
     // Calibrate: go to a known PTZ, pick a waypoint, capture.
     await page.fill('#absForm [name=x]', '0.25');
@@ -221,8 +221,11 @@ test('capture without any zone goes to the camera set; fixed zone view; override
 
         // Fixed mode zone: save, jog somewhere, use current view, go back to it.
         const zf = page.locator('#zoneForm');
-        await zf.locator('[name=name]').fill('Close in');
         await zf.locator('[name=mode]').selectOption('fixed');
+        // A new zone needs a region; it is named after it.
+        await page.click('text=Save zone');
+        await page.locator('#zoneMsg', {hasText: 'Choose a region'}).waitFor();
+        await zf.locator('[name=region]').selectOption({label: 'Close in'});
         assert.equal(await page.locator('#fixedView').isVisible(), true);
         assert.equal(await page.locator('#viewSetBtn').isDisabled(), true);
         await page.click('text=Save zone');

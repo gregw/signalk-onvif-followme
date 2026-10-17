@@ -59,12 +59,23 @@ test('zones: geometry snapshot, priority, modes, calibration override, cascade d
     const s = new Store(dir, {now: () => Date.UTC(2026, 9, 17)}).load();
     const c = await s.putCamera('apt', cam);
     assert.ok(c.calibrationId, 'camera owns a calibration set');
-    await assert.rejects(s.createZone({cameraId: 'nope'}), {status: 404});
-    const z1 = await s.createZone({
-        name: 'Harbour',
-        cameraId: 'apt',
-        geometry: {ref: 'rg-1', refName: 'Harbour', polygon: square}
+    const region = (ref, refName) => ({ref, refName, polygon: square});
+    await assert.rejects(s.createZone({cameraId: 'nope', geometry: region('rg-1', 'Harbour')}), {status: 404});
+    await assert.rejects(s.createZone({cameraId: 'apt'}), {status: 400, message: /region/});
+    await assert.rejects(s.createZone({cameraId: 'apt', geometry: {polygon: square}}), {status: 400});
+    await assert.rejects(s.createZone({cameraId: 'apt', geometry: {ref: 'rg-1', polygon: square}}), {
+        status: 400,
+        message: /refName/
     });
+    assert.equal(s.state.calibrations.length, 1, 'rejected requests leave no calibration behind');
+    const z1 = await s.createZone({cameraId: 'apt', geometry: region('rg-1', 'Harbour'), calibrationOverride: true});
+    assert.equal('name' in z1, false, 'named by its region');
+    await assert.rejects(s.createZone({cameraId: 'apt', geometry: region('rg-1', 'Harbour')}), {status: 409});
+    await assert.rejects(s.putZone(z1.id, {cameraId: 'apt', mode: {type: 'nope'}, calibrationOverride: false}), {
+        status: 400
+    });
+    assert.ok(s.zone(z1.id).calibrationId, 'failed update did not drop the override');
+    await s.putZone(z1.id, {cameraId: 'apt', calibrationOverride: false});
     assert.equal(z1.mode.type, 'followme');
     assert.equal(z1.geometry.frame, 'absolute');
     assert.equal(z1.priority, 1);
@@ -76,13 +87,14 @@ test('zones: geometry snapshot, priority, modes, calibration override, cascade d
     await assert.rejects(s.deleteCamera('apt'), {status: 409});
 
     // Fixed mode: saved without a view, then the view is set; other edits keep it.
-    const z2 = await s.createZone({name: 'Close in', cameraId: 'apt', mode: {type: 'fixed'}});
+    const z2 = await s.createZone({cameraId: 'apt', geometry: region('rg-2', 'Close in'), mode: {type: 'fixed'}});
     assert.equal(z2.priority, 2);
     assert.equal(z2.mode.ptz, null);
     await s.setFixedView(z2.id, {x: 0.1, y: -0.3, zoom: 0});
-    await s.putZone(z2.id, {name: 'Close in 2', cameraId: 'apt', mode: {type: 'fixed'}});
+    await s.putZone(z2.id, {cameraId: 'apt', mode: {type: 'fixed'}, priority: 7});
     assert.deepEqual(s.zone(z2.id).mode.ptz, {x: 0.1, y: -0.3, zoom: 0});
-    assert.equal(s.zone(z2.id).geometry, null);
+    assert.equal(s.zone(z2.id).geometry.refName, 'Close in');
+    assert.equal(s.zone(z2.id).priority, 7);
     await assert.rejects(s.setFixedView(z1.id, {x: 0, y: 0, zoom: 0}), {status: 400});
 
     // Override on, sample into it, override off drops it.
@@ -139,6 +151,32 @@ test('a v2 file with the dropped edgeMarginM setting loads without it', (t) => {
     assert.deepEqual(new Store(dir).load().state.settings, {holdS: 7});
 });
 
+test('loading drops old zone names and zones without a region', (t) => {
+    const dir = tmp(t);
+    const geometry = {frame: 'absolute', ref: 'rg-1', refName: 'Outer Harbour', polygon: square};
+    fs.writeFileSync(
+        path.join(dir, 'state.json'),
+        JSON.stringify({
+            version: 2,
+            settings: {holdS: 5},
+            cameras: [],
+            zones: [
+                {id: 'z1', name: 'Zone 1', cameraId: 'apt', priority: 1, geometry, mode: {type: 'followme'}},
+                {id: 'z2', name: 'Zone 2', cameraId: 'apt', priority: 2, geometry: null, mode: {type: 'followme'}}
+            ],
+            calibrations: []
+        })
+    );
+    const logs = [];
+    const s = new Store(dir, {log: (m) => logs.push(m)}).load();
+    assert.deepEqual(
+        s.state.zones.map((z) => z.id),
+        ['z1']
+    );
+    assert.equal('name' in s.state.zones[0], false);
+    assert.match(logs.join('\n'), /dropping zone z2/);
+});
+
 test('migrates a version 1 state file: zone samples move to the camera set', async (t) => {
     const dir = tmp(t);
     const v1 = {
@@ -151,7 +189,16 @@ test('migrates a version 1 state file: zone samples move to the camera set', asy
                 pose: {type: 'fixed', position: null}
             }
         ],
-        zones: [{id: 'z1', name: 'Z', cameraId: 'apt', geometry: null, mode: {type: 'followme'}, calibrationId: 'c1'}],
+        zones: [
+            {
+                id: 'z1',
+                name: 'Z',
+                cameraId: 'apt',
+                geometry: {frame: 'absolute', ref: 'rg-1', refName: 'Z', polygon: square},
+                mode: {type: 'followme'},
+                calibrationId: 'c1'
+            }
+        ],
         calibrations: [
             {
                 id: 'c1',

@@ -42,3 +42,12 @@ Resolves the brief's deferred decision 2. Per camera (lib/engine/zones.js):
 An edge margin (enter only when inside by N metres, leave only when outside by N) was
 implemented and dropped the same day: overlaps already give zone to zone hysteresis, and the
 hold covers the outer edge and bad fixes.
+
+## 2026-10-17: Zones are named by their region
+
+A zone has no name of its own: it shows its region's name, snapshotted with the polygon
+(`geometry.refName`), so renaming the region in Freeboard does not rename the zone until
+the zone is saved again. A region is therefore required, and a camera has at most one zone
+per region. Saving a zone re-copies the region's current polygon and name; if the region
+was deleted in Freeboard, the copy is kept. Older state files lose their free text zone
+names on load, and any zone without a region is dropped (logged).
