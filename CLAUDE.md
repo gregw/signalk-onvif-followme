@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Conduct rules for this repository. The project brief is in `wiki/signalk-onvif-followme-brief.md`; read it before starting any task. Phase 0 findings and verified versions are in `wiki/phase0.md`.
+Conduct rules for this repository. The project brief is in `wiki/signalk-onvif-followme-brief.md`; read it before starting any task. Phase 0 findings and verified versions are in `wiki/phase0.md`. Decisions made since the brief are in `wiki/decisions.md`; where it differs from the brief, it wins.
 
 ## Verify, don't assert
 

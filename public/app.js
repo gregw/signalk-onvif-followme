@@ -23,7 +23,15 @@
     const fmtDeg = (r) => (r === null || r === undefined ? '-' : deg(r).toFixed(2) + '°');
     const fmtN = (v, d = 3) => (v === null || v === undefined ? '-' : Number(v).toFixed(d));
 
-    const state = {cameras: [], zones: [], waypoints: {}, regions: {}, cameraId: null, zoneId: null};
+    const state = {
+        cameras: [],
+        zones: [],
+        settings: {edgeMarginM: 10, holdS: 5},
+        waypoints: {},
+        regions: {},
+        cameraId: null,
+        zoneId: null
+    };
 
     // ---- HTTP
 
@@ -363,11 +371,16 @@
         return state.zones.find((z) => z.id === state.zoneId) || null;
     }
 
+    const fmtPtz = (v) => (v ? `pan ${fmtN(v.x)} tilt ${fmtN(v.y)} zoom ${fmtN(v.zoom)}` : 'not set');
+
     function renderZones() {
         const f = $('#zoneForm');
         fillSelect(
             f.zone,
-            state.zones.map((z) => [z.id, z.name]),
+            state.zones.map((z) => [
+                z.id,
+                `${z.name} (${z.mode.type === 'fixed' ? 'fixed' : 'follow'}, p${z.priority})`
+            ]),
             {blank: '(new zone)', selected: state.zoneId || ''}
         );
         const z = zone();
@@ -377,7 +390,11 @@
             {blank: '(none yet)', selected: z && z.geometry ? z.geometry.ref || '' : ''}
         );
         f.name.value = z ? z.name : 'Zone ' + (state.zones.length + 1);
+        f.priority.value = z ? z.priority : '';
+        f.mode.value = z ? z.mode.type : 'followme';
+        f.override.checked = !!(z && z.calibrationId);
         $('#zoneDeleteBtn').disabled = !z;
+        renderZoneMode();
         const g = z && z.geometry;
         msg(
             '#zoneMsg',
@@ -387,23 +404,37 @@
                   ? 'No region assigned'
                   : ''
         );
+        const st = state.settings;
+        f.edgeMarginM.value = st.edgeMarginM;
+        f.holdS.value = st.holdS;
     }
 
+    /** Fixed mode controls only make sense for a saved fixed zone. */
+    function renderZoneMode() {
+        const f = $('#zoneForm');
+        const z = zone();
+        const fixed = f.mode.value === 'fixed';
+        $('#fixedView').hidden = !fixed;
+        const saved = z && z.mode.type === 'fixed';
+        $('#viewSetBtn').disabled = !saved;
+        $('#viewGotoBtn').disabled = !(saved && z.mode.ptz);
+        $('#viewInfo').textContent = saved ? `View: ${fmtPtz(z.mode.ptz)}` : 'Save the zone, then set its view.';
+    }
+
+    $('#zoneForm').mode.addEventListener('change', renderZoneMode);
     $('#zoneForm').zone.addEventListener('change', (e) => {
         state.zoneId = e.target.value || null;
         renderZones();
         renderCalibration();
     });
 
-    async function saveZone(body) {
-        const z = state.zoneId ? await api('PUT', `/zones/${state.zoneId}`, body) : await api('POST', '/zones', body);
+    function storeZone(z) {
         const i = state.zones.findIndex((x) => x.id === z.id);
         if (i >= 0) state.zones[i] = z;
         else state.zones.push(z);
         state.zoneId = z.id;
         renderZones();
         renderCalibration();
-        return z;
     }
 
     $('#zoneForm').addEventListener('submit', async (e) => {
@@ -415,23 +446,41 @@
         const body = {
             name: f.name.value,
             cameraId: state.cameraId,
+            priority: f.priority.value === '' ? undefined : Number(f.priority.value),
+            mode: {type: f.mode.value},
+            calibrationOverride: f.override.checked,
+            // A region picked now is copied in; otherwise the stored polygon is kept.
             geometry: region
                 ? {frame: 'absolute', ref: regionId, refName: region.name, polygon: region.feature.geometry}
-                : zone()
-                  ? zone().geometry
-                  : null
+                : undefined
         };
         try {
-            await saveZone(body);
+            const z = state.zoneId
+                ? await api('PUT', `/zones/${state.zoneId}`, body)
+                : await api('POST', '/zones', body);
+            storeZone(z);
             msg('#zoneMsg', 'Saved. ' + $('#zoneMsg').textContent, 'ok');
         } catch (err) {
             msg('#zoneMsg', err.message, 'bad');
         }
     });
 
+    $('#viewSetBtn').addEventListener('click', async () => {
+        try {
+            storeZone(await api('POST', `/zones/${state.zoneId}/view`));
+            msg('#zoneMsg', 'View set from the camera.', 'ok');
+        } catch (err) {
+            msg('#zoneMsg', err.message, 'bad');
+        }
+    });
+    $('#viewGotoBtn').addEventListener('click', () =>
+        api('POST', `/zones/${state.zoneId}/view/goto`).catch((err) => msg('#zoneMsg', err.message, 'bad'))
+    );
+
     $('#zoneDeleteBtn').addEventListener('click', async () => {
         const z = zone();
-        if (!z || !confirm(`Delete zone "${z.name}" and its calibration samples?`)) return;
+        const extra = z && z.calibrationId ? ' and its own calibration samples' : '';
+        if (!z || !confirm(`Delete zone "${z.name}"${extra}?`)) return;
         try {
             await api('DELETE', `/zones/${z.id}`);
             state.zones = state.zones.filter((x) => x.id !== z.id);
@@ -443,7 +492,28 @@
         }
     });
 
+    $('#settingsBtn').addEventListener('click', async () => {
+        const f = $('#zoneForm');
+        try {
+            state.settings = await api('PUT', '/settings', {
+                edgeMarginM: Number(f.edgeMarginM.value),
+                holdS: Number(f.holdS.value)
+            });
+            msg('#zoneMsg', 'Zone switching settings saved.', 'ok');
+        } catch (err) {
+            msg('#zoneMsg', err.message, 'bad');
+        }
+    });
+
     // ---- Calibration
+    // The set being edited: the selected zone's override if it has one, else the camera's.
+
+    function calTarget() {
+        const z = zone();
+        if (z && z.calibrationId) return {id: z.calibrationId, label: `zone "${z.name}" (override)`};
+        const c = camera();
+        return c && c.calibrationId ? {id: c.calibrationId, label: `camera "${c.name || c.id}"`} : null;
+    }
 
     function renderWaypointSelect() {
         const f = $('#calForm');
@@ -456,6 +526,12 @@
         updateWpInfo();
     }
 
+    const zoneNames = (ids) =>
+        ids
+            .map((id) => (state.zones.find((z) => z.id === id) || {}).name)
+            .filter(Boolean)
+            .join(', ') || 'none';
+
     async function updateWpInfo() {
         const f = $('#calForm');
         const w = state.waypoints[f.waypoint.value];
@@ -465,10 +541,9 @@
         if (state.cameraId) q.set('cameraId', state.cameraId);
         try {
             const g = await api('GET', `/geometry?${q}`);
-            const inZone = state.zoneId ? (g.zones.includes(state.zoneId) ? 'inside zone' : 'outside zone') : '';
             $('#wpInfo').textContent =
                 `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}  bearing ${fmtBearing(g.bearing)}  ` +
-                `range ${fmtRange(g.range)}  ${inZone}`;
+                `range ${fmtRange(g.range)}  zones: ${zoneNames(g.zones)}`;
         } catch (err) {
             $('#wpInfo').textContent = err.message;
         }
@@ -487,15 +562,11 @@
         const f = e.target;
         const id = f.waypoint.value;
         const p = wpPos(state.waypoints[id]);
-        if (!state.cameraId) return msg('#calMsg', 'Save a camera first.', 'bad');
+        const t = calTarget();
+        if (!t) return msg('#calMsg', 'Save a camera first.', 'bad');
         if (!p) return msg('#calMsg', 'Choose a waypoint.', 'bad');
         try {
-            // Samples belong to a zone. If there is none yet, create one without a region;
-            // the region can be assigned later in the Zone panel.
-            if (!state.zoneId) {
-                await saveZone({name: $('#zoneForm').name.value || 'Zone 1', cameraId: state.cameraId, geometry: null});
-            }
-            const s = await api('POST', `/calibration/${state.zoneId}`, {
+            const s = await api('POST', `/calibration/${t.id}`, {
                 waypointId: id,
                 name: state.waypoints[id].name,
                 latitude: p.latitude,
@@ -515,16 +586,16 @@
 
     async function renderCalibration() {
         const tbody = $('#samples tbody');
-        $('#captureBtn').disabled = !state.cameraId;
-        if (!state.zoneId) {
-            tbody.innerHTML = state.cameraId
-                ? '<tr><td colspan="9" class="hint">No samples yet. The first capture also creates a zone.</td></tr>'
-                : '<tr><td colspan="9" class="hint">Save a camera first.</td></tr>';
+        const t = calTarget();
+        $('#captureBtn').disabled = !t;
+        $('#calTarget').textContent = t ? `Calibrating ${t.label}.` : '';
+        if (!t) {
+            tbody.innerHTML = '<tr><td colspan="9" class="hint">Save a camera first.</td></tr>';
             return;
         }
         let cal;
         try {
-            cal = await api('GET', `/calibration/${state.zoneId}`);
+            cal = await api('GET', `/calibration/${t.id}`);
         } catch (err) {
             return msg('#calMsg', err.message, 'bad');
         }
@@ -539,7 +610,7 @@
                 fmtBearing(s.bearing),
                 fmtRange(s.range),
                 fmtDeg(s.depression),
-                s.inZone === null ? '-' : s.inZone ? 'yes' : 'no',
+                zoneNames(s.zones),
                 fmtN(s.ptz.x),
                 fmtN(s.ptz.y),
                 fmtN(s.ptz.zoom)
@@ -552,12 +623,12 @@
             const td = document.createElement('td');
             const go = document.createElement('button');
             go.textContent = 'Go to';
-            go.onclick = () => api('POST', `/calibration/${state.zoneId}/${s.id}/goto`).catch(showError);
+            go.onclick = () => api('POST', `/calibration/${t.id}/${s.id}/goto`).catch(showError);
             const del = document.createElement('button');
             del.textContent = 'Delete';
             del.onclick = async () => {
                 if (!confirm(`Delete sample ${s.name || ''}?`)) return;
-                await api('DELETE', `/calibration/${state.zoneId}/${s.id}`).catch(showError);
+                await api('DELETE', `/calibration/${t.id}/${s.id}`).catch(showError);
                 renderCalibration();
             };
             td.append(go, del);
@@ -574,6 +645,7 @@
             const s = await api('GET', '/state');
             state.cameras = s.cameras;
             state.zones = s.zones;
+            state.settings = s.settings;
             state.cameraId = s.cameras.length ? s.cameras[0].id : null;
             state.zoneId = s.zones.length ? s.zones[0].id : null;
             setConn(state.cameraId ? 'connecting' : 'no camera', '');

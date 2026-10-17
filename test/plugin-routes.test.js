@@ -19,6 +19,16 @@ async function call(method, p, body) {
     return {status: r.status, ct, body: ct.includes('json') ? await r.json() : Buffer.from(await r.arrayBuffer())};
 }
 
+/** Poll status until the fake camera reports IDLE. */
+async function settle() {
+    for (let i = 0; i < 100; i++) {
+        const st = await call('GET', '/camera/apt/status');
+        if (st.body.moveStatus === 'IDLE') return st.body;
+        await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error('camera did not settle');
+}
+
 const CAMERA = {
     name: 'Apartment',
     conn: {hostname: '192.0.2.64', port: 80, username: 'admin', password: 'pw'},
@@ -50,7 +60,7 @@ test('camera control: test, status, move, stop, snapshot', async () => {
     assert.equal((await call('GET', '/camera/nope/status')).status, 404);
 });
 
-test('zone, capture, derived bearing/range, goto, geometry query', async () => {
+test('zone, capture into the camera set, derived bearing/range, goto, geometry query', async () => {
     const polygon = {
         type: 'Polygon',
         coordinates: [
@@ -66,11 +76,13 @@ test('zone, capture, derived bearing/range, goto, geometry query', async () => {
     const z = await call('POST', '/zones', {name: 'Harbour', cameraId: 'apt', geometry: {ref: 'rg-harbour', polygon}});
     assert.equal(z.status, 200);
     const zoneId = z.body.id;
+    const st = await call('GET', '/state');
+    const calId = st.body.cameras.find((c) => c.id === 'apt').calibrationId;
+    assert.deepEqual(st.body.settings, {edgeMarginM: 10, holdS: 5});
 
     await call('POST', '/camera/apt/move', {mode: 'absolute', x: 0.25, y: -0.1, zoom: 0.2});
-    // Fake camera moves 0.001 units/ms in real time here; let it arrive.
-    await new Promise((r) => setTimeout(r, 400));
-    const cap = await call('POST', `/calibration/${zoneId}`, {
+    await settle();
+    const cap = await call('POST', `/calibration/${calId}`, {
         waypointId: 'wp-pile',
         name: 'Pile 7',
         latitude: -27.4,
@@ -82,13 +94,14 @@ test('zone, capture, derived bearing/range, goto, geometry query', async () => {
     assert.ok(Math.abs((cap.body.bearing * 180) / Math.PI - 90) < 0.01, `bearing ${cap.body.bearing}`);
     assert.ok(Math.abs(cap.body.range - 989.01) < 0.01, `range ${cap.body.range}`);
 
-    const cal = await call('GET', `/calibration/${zoneId}`);
+    const cal = await call('GET', `/calibration/${calId}`);
+    assert.deepEqual(cal.body.owner, {type: 'camera', id: 'apt'});
     assert.equal(cal.body.samples.length, 1);
-    assert.equal(cal.body.samples[0].inZone, true);
+    assert.deepEqual(cal.body.samples[0].zones, [zoneId]);
     assert.ok(cal.body.samples[0].depression > 0);
 
     await call('POST', '/camera/apt/move', {mode: 'absolute', x: -0.5, y: 0, zoom: 0});
-    assert.equal((await call('POST', `/calibration/${zoneId}/${cap.body.id}/goto`)).status, 200);
+    assert.equal((await call('POST', `/calibration/${calId}/${cap.body.id}/goto`)).status, 200);
     const fake = srv.cameras[srv.cameras.length - 1].adapter;
     assert.deepEqual(fake.calls.filter((c) => c[0] === 'absoluteMove').pop()[1], {x: 0.25, y: -0.1, zoom: 0.2});
 
@@ -98,9 +111,33 @@ test('zone, capture, derived bearing/range, goto, geometry query', async () => {
     assert.deepEqual(outside.body.zones, []);
     assert.equal((await call('GET', '/geometry?latitude=x')).status, 400);
 
-    assert.equal((await call('DELETE', `/calibration/${zoneId}/${cap.body.id}`)).status, 200);
+    // Override set for the zone.
+    const ov = await call('PUT', `/zones/${zoneId}`, {name: 'Harbour', cameraId: 'apt', calibrationOverride: true});
+    assert.ok(ov.body.calibrationId && ov.body.calibrationId !== calId);
+    const ovCal = await call('GET', `/calibration/${ov.body.calibrationId}`);
+    assert.deepEqual(ovCal.body.owner, {type: 'zone', id: zoneId});
+    assert.equal(ovCal.body.samples.length, 0);
+
+    assert.equal((await call('DELETE', `/calibration/${calId}/${cap.body.id}`)).status, 200);
     assert.equal((await call('DELETE', '/cameras/apt')).status, 409);
     assert.equal((await call('DELETE', `/zones/${zoneId}`)).status, 200);
+});
+
+test('fixed mode zone: capture the current view and go back to it', async () => {
+    const z = await call('POST', '/zones', {name: 'Close', cameraId: 'apt', mode: {type: 'fixed'}});
+    assert.equal(z.body.mode.ptz, null);
+    assert.equal((await call('POST', `/zones/${z.body.id}/view/goto`)).status, 400);
+    await call('POST', '/camera/apt/move', {mode: 'absolute', x: -0.2, y: 0.1, zoom: 0});
+    await settle();
+    const v = await call('POST', `/zones/${z.body.id}/view`);
+    assert.deepEqual(v.body.mode.ptz, {x: -0.2, y: 0.1, zoom: 0});
+    await call('POST', '/camera/apt/move', {mode: 'absolute', x: 0.5, y: 0, zoom: 0});
+    assert.equal((await call('POST', `/zones/${z.body.id}/view/goto`)).status, 200);
+    const fake = srv.cameras[srv.cameras.length - 1].adapter;
+    assert.deepEqual(fake.calls.filter((c) => c[0] === 'absoluteMove').pop()[1], {x: -0.2, y: 0.1, zoom: 0});
+    assert.equal((await call('PUT', '/settings', {edgeMarginM: 20})).body.edgeMarginM, 20);
+    assert.equal((await call('PUT', '/settings', {holdS: 'x'})).status, 400);
+    await call('DELETE', `/zones/${z.body.id}`);
 });
 
 test('stopped plugin answers 503', async () => {

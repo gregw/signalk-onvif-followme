@@ -266,3 +266,12 @@ td button {
     padding: 3px 8px;
     margin-right: 4px;
 }
+.grid label.check {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    align-self: end;
+}
+#fixedView[hidden] {
+    display: none;
+}

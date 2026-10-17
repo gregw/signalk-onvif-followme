@@ -97,7 +97,8 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.locator('#status', {hasText: 'pan 0.250  tilt -0.100  zoom 0.200'}).waitFor();
     await page.locator('#calForm [name=waypoint]').selectOption({label: 'Pile 7'});
     await page.locator('#wpInfo', {hasText: 'bearing 090.0'}).waitFor();
-    await page.locator('#wpInfo', {hasText: 'inside zone'}).waitFor();
+    await page.locator('#wpInfo', {hasText: 'zones: Harbour'}).waitFor();
+    await page.locator('#calTarget', {hasText: 'Calibrating camera "Apartment"'}).waitFor();
     await page.click('#captureBtn');
     await page.locator('#calMsg', {hasText: 'Captured Pile 7: pan 0.250 tilt -0.100 zoom 0.200'}).waitFor();
     const row = page.locator('#samples tbody tr', {hasText: 'Pile 7'});
@@ -105,7 +106,7 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     const cells = await row.locator('td').allTextContents();
     assert.equal(cells[1], '090.0°');
     assert.equal(cells[2], '989 m');
-    assert.equal(cells[4], 'yes');
+    assert.equal(cells[4], 'Harbour');
     assert.equal(cells[5], '0.250');
     await shot(page, 'desktop');
 
@@ -146,11 +147,13 @@ test('not logged in shows the login banner', async () => {
     await ctx.close();
 });
 
-test('capture with no zone yet creates one, without a region', async () => {
+test('capture without any zone goes to the camera set; fixed zone view; override; settings', async () => {
     const fresh = await startDevServer();
     const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
     try {
         const page = await ctx.newPage();
+        const errors = [];
+        page.on('pageerror', (e) => errors.push(e.message));
         await page.goto(fresh.url);
         await page.locator('#conn', {hasText: 'no camera'}).waitFor();
         assert.equal(await page.locator('#captureBtn').isDisabled(), true);
@@ -160,16 +163,56 @@ test('capture with no zone yet creates one, without a region', async () => {
         await page.click('text=Save camera');
         await page.locator('#cameraMsg', {hasText: 'Saved'}).waitFor();
         assert.equal(await page.locator('#captureBtn').isDisabled(), false);
-        await page.locator('#samples', {hasText: 'first capture also creates a zone'}).waitFor();
 
         await page.locator('#calForm [name=waypoint]').selectOption({label: 'Pile 7'});
+        await page.locator('#wpInfo', {hasText: 'zones: none'}).waitFor();
         await page.click('#captureBtn');
         await page.locator('#calMsg', {hasText: 'Captured Pile 7'}).waitFor();
         await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
-        await page.locator('#zoneMsg', {hasText: 'No region assigned'}).waitFor();
-        const st = await (await fetch(fresh.api + '/state')).json();
-        assert.equal(st.zones.length, 1);
-        assert.equal(st.zones[0].geometry, null);
+        let st = await (await fetch(fresh.api + '/state')).json();
+        assert.equal(st.zones.length, 0, 'no zone created');
+
+        // Fixed mode zone: save, jog somewhere, use current view, go back to it.
+        const zf = page.locator('#zoneForm');
+        await zf.locator('[name=name]').fill('Close in');
+        await zf.locator('[name=mode]').selectOption('fixed');
+        assert.equal(await page.locator('#fixedView').isVisible(), true);
+        assert.equal(await page.locator('#viewSetBtn').isDisabled(), true);
+        await page.click('text=Save zone');
+        await page.locator('#zoneMsg', {hasText: 'Saved'}).waitFor();
+        await page.fill('#absForm [name=x]', '-0.3');
+        await page.fill('#absForm [name=y]', '0.2');
+        await page.fill('#absForm [name=zoom]', '0');
+        await page.click('#absForm button[type=submit]');
+        await page.locator('#status', {hasText: 'pan -0.300  tilt 0.200'}).waitFor();
+        await page.locator('#status', {hasText: 'IDLE'}).waitFor();
+        await page.click('#viewSetBtn');
+        await page.locator('#viewInfo', {hasText: 'pan -0.300 tilt 0.200 zoom 0.000'}).waitFor();
+        await page.fill('#absForm [name=x]', '0.4');
+        await page.click('#absForm button[type=submit]');
+        await page.locator('#status', {hasText: 'pan 0.400'}).waitFor();
+        await page.click('#viewGotoBtn');
+        await page.locator('#status', {hasText: 'pan -0.300'}).waitFor();
+
+        // Override: the calibration panel switches to the zone's own (empty) set.
+        await zf.locator('[name=override]').check();
+        await page.click('text=Save zone');
+        await page.locator('#calTarget', {hasText: 'zone "Close in" (override)'}).waitFor();
+        await page.locator('#samples', {hasText: 'No samples yet'}).waitFor();
+        await zf.locator('[name=override]').uncheck();
+        await page.click('text=Save zone');
+        await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
+
+        // Switching settings.
+        await zf.locator('[name=edgeMarginM]').fill('25');
+        await page.click('#settingsBtn');
+        await page.locator('#zoneMsg', {hasText: 'switching settings saved'}).waitFor();
+        st = await (await fetch(fresh.api + '/state')).json();
+        assert.deepEqual(st.settings, {edgeMarginM: 25, holdS: 5});
+        assert.equal(st.zones[0].mode.type, 'fixed');
+        assert.deepEqual(st.zones[0].mode.ptz, {x: -0.3, y: 0.2, zoom: 0});
+        if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'fixed.png'), fullPage: true});
+        assert.deepEqual(errors, []);
     } finally {
         await ctx.close();
         await fresh.close();
