@@ -23,6 +23,17 @@ test('deadband per axis: small changes held, all small sends nothing', () => {
     assert.deepEqual(d.send, {x: 0.2, y: -0.2, zoom: 0.3}, 'tilt and zoom held at the last commanded values');
 });
 
+test('keepalive re-sends the last command inside the deadband', () => {
+    const K = {...S, keepaliveMs: 5000};
+    const l = last(0.05, -0.5, 0, 1000);
+    const want = {x: 0.05, y: -0.5, zoom: 0};
+    assert.equal(decide({want, last: l, now: 5999, settings: K}).reason, 'deadband');
+    const d = decide({want, last: l, now: 6000, settings: K});
+    assert.equal(d.reason, 'keepalive');
+    assert.deepEqual(d.send, {x: 0.05, y: -0.5, zoom: 0});
+    assert.equal(decide({want, last: l, now: 60000, settings: S}).reason, 'deadband', 'no keepalive unless asked');
+});
+
 test('min interval and waitIdle', () => {
     const l = last(0, 0, 0, 1000);
     const want = {x: 0.5, y: 0, zoom: 0};

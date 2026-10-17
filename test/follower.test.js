@@ -170,14 +170,17 @@ test('lead: aims ahead along COG/SOG', async (t) => {
     assert.ok(Math.abs(moves()[0].x - truePtz(q).x) < 0.002, `${moves()[0].x} vs ${truePtz(q).x}`);
 });
 
-test('fixed zone: one move to its view, then nothing while the boat moves inside', async (t) => {
-    const {store, fix, run, moves} = await setup(t);
-    await store.putSettings({followEnabled: true, holdS: 0, leadS: 0});
-    fix(at(200, 380));
-    await run(1000);
-    fix(at(195, 400));
-    await run(3000);
-    assert.deepEqual(moves(), [{x: 0.05, y: -0.5, zoom: 0}]);
+test('fixed zone: its view, then the same view again every hold time', async (t) => {
+    const {store, follower, fix, run, moves} = await setup(t);
+    await store.putSettings({followEnabled: true, holdS: 2, leadS: 0});
+    const view = {x: 0.05, y: -0.5, zoom: 0};
+    // Entry hold 2 s, first move, then keepalive every 2 s while the boat moves about inside.
+    let i = 0;
+    await run(9000, () => fix(at(195 + (i++ % 8), 380)));
+    const ms = moves();
+    assert.ok(ms.length >= 3 && ms.length <= 4, `view then keepalives: ${ms.length}`);
+    for (const m of ms) assert.deepEqual(m, view);
+    assert.match(follower.status().cameras.c1.reason, /keepalive|deadband/);
 });
 
 test('leaving all zones releases after the hold; stale position stops; manual pause blocks', async (t) => {

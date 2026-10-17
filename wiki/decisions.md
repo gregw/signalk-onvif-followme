@@ -100,3 +100,10 @@ calibration after a confirmation naming what is lost; the file is fully validate
   whether this camera accepts a new AbsoluteMove mid-move (Phase 0 did not test it).
 - At constant range the pan deadband sets the update rate: 5 m/s at 1 km crosses 0.003
   every ~1.9 s, giving ~0.5 degree steps.
+
+## 2026-10-17: Fixed zone keepalive
+
+A fixed zone re-sends its view every `holdS` seconds (at least 1 s) while the boat stays in
+it, so the camera's own scan does not resume. Follow zones still send nothing while the
+aim is inside the deadband (brief: release, not hold); the same keepalive could be enabled
+for them if a slow or stationary boat lets the scan take over.
