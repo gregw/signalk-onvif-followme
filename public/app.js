@@ -768,7 +768,8 @@
                     deadband: 'within deadband',
                     interval: 'waiting min interval',
                     moving: 'waiting for idle',
-                    first: 'first move'
+                    first: 'first move',
+                    keepalive: 'refreshing the view'
                 }[r] || r;
             return ['ok', `In ${c.zone.name}: ${what} (${why}).`];
         }
