@@ -285,6 +285,9 @@ test('settings: defaults, validation, persisted', async (t) => {
     await assert.rejects(s.putSettings({holdS: -1}), {status: 400, message: /holdS must be 0..600 s/});
     await assert.rejects(s.putSettings({nope: 1}), {status: 400, message: /unknown setting/});
     await assert.rejects(s.putSettings({holdS: 3, speed: 2}), {status: 400, message: /speed/});
+    await assert.rejects(s.putSettings({speed: 0.0005}), {status: 400, message: /speed must be 0.001..1/});
+    assert.equal((await s.putSettings({speed: 0.005})).speed, 0.005);
+    await s.putSettings({speed: null});
     assert.equal(s.state.settings.holdS, 5, 'a rejected update changes nothing');
     await s.putSettings({holdS: 3, followEnabled: true, speed: 0.4});
     await s.putSettings({speed: null});
