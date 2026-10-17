@@ -364,6 +364,41 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         await page.locator('#aimMsg', {hasText: 'zone Harbour'}).waitFor();
         const pan2 = Number(/pan (-?[\d.]+)/.exec(await page.locator('#aimMsg').textContent())[1]);
         assert.ok(pan2 > pan1, `moved towards the 0.4 sample: ${pan1} -> ${pan2}`);
+        // Region edited in Freeboard: Update is highlighted after a reload, other zone edits do
+        // not touch the stored polygon, Update copies the new polygon and name.
+        const zrow = page.locator('#zones tbody tr').first();
+        const upd = zrow.locator('button', {hasText: 'Update'});
+        assert.equal(await upd.getAttribute('class'), '');
+        const rg = resources.regions['rg-harbour'];
+        const oldPolygon = JSON.parse(JSON.stringify(rg.feature.geometry));
+        rg.name = 'Harbour West';
+        rg.feature.geometry.coordinates[0][1][0] = 153.212;
+        await page.click('#refreshWpBtn');
+        await page.waitForFunction(() => document.querySelector('#zones tbody tr button.stale'));
+        await zrow.locator('[aria-label=priority]').fill('3');
+        await zrow.locator('[aria-label=priority]').press('Tab');
+        await page.locator('#zoneMsg', {hasText: 'Saved Harbour'}).waitFor();
+        let zs = (await (await fetch(fresh.api + '/state')).json()).zones;
+        assert.deepEqual(zs[0].geometry.polygon, oldPolygon, 'priority edit kept the stored polygon');
+        assert.equal(zs[0].priority, 3);
+        await zrow.locator('button', {hasText: 'Update'}).click();
+        await page.locator('#zoneMsg', {hasText: 'Updated Harbour West from its region'}).waitFor();
+        zs = (await (await fetch(fresh.api + '/state')).json()).zones;
+        assert.equal(zs[0].geometry.refName, 'Harbour West');
+        assert.equal(zs[0].geometry.polygon.coordinates[0][1][0], 153.212);
+        assert.equal(zs[0].priority, 3);
+        await page.locator('#zones tbody tr', {hasText: 'Harbour West'}).waitFor();
+        assert.equal(await page.locator('#zones tbody tr button.stale').count(), 0);
+        await page.locator('#zones tbody tr button', {hasText: 'Update'}).click();
+        await page.locator('#zoneMsg', {hasText: 'already matches its region'}).waitFor();
+        // Region deleted: no Update button, the zone keeps its copy.
+        delete resources.regions['rg-harbour'];
+        await page.click('#refreshWpBtn');
+        await page.locator('#zones tbody tr', {hasText: 'Harbour West (region deleted)'}).waitFor();
+        assert.equal(await page.locator('#zones tbody tr button', {hasText: 'Update'}).count(), 0);
+        resources.regions['rg-harbour'] = rg;
+        await page.click('#refreshWpBtn');
+
         // Export downloads zones and calibration; importing a file with no zones empties them
         // after confirmation; importing the export restores them.
         const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#exportBtn')]);
@@ -388,7 +423,7 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         await page.setInputFiles('#importFile', back);
         await page.locator('#zoneMsg', {hasText: 'Imported 1 zones and 2 samples'}).waitFor();
         await page.locator('#samples tbody tr', {hasText: 'Harbour mouth'}).waitFor();
-        await page.locator('#zones tbody tr', {hasText: 'Harbour'}).waitFor();
+        await page.locator('#zones tbody tr', {hasText: 'Harbour West'}).waitFor();
         fs.rmSync(dir, {recursive: true, force: true});
 
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'aim.png'), fullPage: true});

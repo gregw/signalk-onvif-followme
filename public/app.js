@@ -473,23 +473,20 @@
     }
 
     /**
-     * Save one zone. The region's current polygon and name are re-copied when the region
-     * still exists, so any save picks up edits made in Freeboard; a deleted region keeps
-     * the stored copy.
+     * Save one zone's settings. The stored polygon is left as it is (geometry omitted); only
+     * the Update button re-copies it from the region.
      */
-    async function saveZone(z, changes) {
-        const region = state.regions[z.geometry.ref];
+    async function saveZone(z, changes, done = `Saved ${zoneName(z)}.`) {
         const body = {
             cameraId: z.cameraId,
             priority: z.priority,
             mode: {type: z.mode.type},
             calibrationOverride: !!z.calibrationId,
-            geometry: region ? regionGeometry(z.geometry.ref, region) : undefined,
             ...changes
         };
         try {
             storeZone(await api('PUT', `/zones/${z.id}`, body));
-            msg('#zoneMsg', `Saved ${zoneName(z)}.`, 'ok');
+            msg('#zoneMsg', done, 'ok');
         } catch (err) {
             msg('#zoneMsg', err.message, 'bad');
             renderZones();
@@ -563,6 +560,26 @@
                 view.textContent = '-';
             }
 
+            // Update: re-read the region from Signal K and copy its polygon and name in.
+            // Highlighted when the cached region differs from the zone's copy.
+            const actions = el('td', {className: 'actions'});
+            if (!gone) {
+                const r = state.regions[z.geometry.ref];
+                const stale =
+                    (r.name || z.geometry.ref) !== z.geometry.refName ||
+                    JSON.stringify(r.feature.geometry) !== JSON.stringify(z.geometry.polygon);
+                const upd = el('button', {
+                    type: 'button',
+                    textContent: 'Update',
+                    className: stale ? 'stale' : '',
+                    title: stale
+                        ? 'The region has been edited since this zone copied it: copy it again'
+                        : 'Copy the region polygon and name again from Signal K'
+                });
+                upd.onclick = () => updateZoneFromRegion(z);
+                actions.append(upd);
+            }
+
             const del = el('button', {type: 'button', textContent: '\u2715', title: 'Delete zone', className: 'del'});
             del.onclick = async () => {
                 const extra = z.calibrationId ? ' and its own calibration samples' : '';
@@ -577,6 +594,7 @@
                 }
             };
 
+            actions.append(del);
             tbody.append(
                 el(
                     'tr',
@@ -586,7 +604,7 @@
                     el('td', {}, prio),
                     el('td', {}, own),
                     view,
-                    el('td', {}, del)
+                    actions
                 )
             );
         }
@@ -597,10 +615,33 @@
         fillSelect(
             $('#zoneAdd [name=region]'),
             free.map(([id, r]) => [id, r.name || id]),
-            {blank: free.length ? '(choose a region)' : '(no unused regions)'}
+            {blank: free.length ? '(choose a region)' : '(all regions used)'}
         );
         $('#zoneAddBtn').disabled = !state.cameraId || !free.length;
         $('#holdS').value = state.settings.holdS;
+    }
+
+    async function updateZoneFromRegion(z) {
+        let r;
+        try {
+            r = await api('GET', `${RES}/regions/${encodeURIComponent(z.geometry.ref)}`);
+        } catch (err) {
+            if (err.status === 404) {
+                delete state.regions[z.geometry.ref];
+                renderZones();
+                return msg('#zoneMsg', `Region ${zoneName(z)} no longer exists; the zone keeps its copy.`, 'bad');
+            }
+            return msg('#zoneMsg', err.message, 'bad');
+        }
+        state.regions[z.geometry.ref] = r;
+        const g = regionGeometry(z.geometry.ref, r);
+        const changed =
+            g.refName !== z.geometry.refName || JSON.stringify(g.polygon) !== JSON.stringify(z.geometry.polygon);
+        await saveZone(
+            z,
+            {geometry: g},
+            changed ? `Updated ${g.refName} from its region.` : `${g.refName} already matches its region.`
+        );
     }
 
     $('#zoneAddBtn').addEventListener('click', async () => {

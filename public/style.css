@@ -421,3 +421,24 @@ a.button {
     color: var(--fg);
     text-decoration: none;
 }
+button.stale {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+}
+#zones tbody td:first-child {
+    white-space: normal;
+    min-width: 70px;
+    max-width: 130px;
+    overflow-wrap: anywhere;
+}
+#zones input.narrow {
+    width: 44px;
+}
+#zones th,
+#zones td {
+    padding: 4px 3px;
+}
+#zoneAdd select[name='region'] {
+    max-width: 130px;
+}
