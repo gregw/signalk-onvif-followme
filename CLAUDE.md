@@ -2,6 +2,8 @@
 
 Conduct rules for this repository. The project brief is in `wiki/signalk-onvif-followme-brief.md`; read it before starting any task. Phase 0 findings and verified versions are in `wiki/phase0.md`. Decisions made since the brief are in `wiki/decisions.md`; where it differs from the brief, it wins.
 
+`wiki/` is a git submodule: the GitHub wiki (https://github.com/gregw/signalk-onvif-followme/wiki). To change a page, commit and push inside `wiki/` (its origin is the SSH URL), then commit the updated `wiki` pointer in this repo. Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after cloning.
+
 ## Verify, don't assert
 
 - Never state a Signal K API, data path, unit, npm package version, ONVIF operation or element, or Node API from memory. Check the signalk-server source, the ONVIF WSDL/schema, or the installed package source first, and cite where you checked.
