@@ -112,6 +112,10 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.locator('#calTarget', {hasText: 'Calibrating camera "Apartment"'}).waitFor();
     await page.click('#captureBtn');
     await page.locator('#calMsg', {hasText: 'Captured Pile 7: pan 0.250 tilt -0.100 zoom 0.200'}).waitFor();
+    // Capturing the same waypoint again replaces the first sample.
+    await page.click('#captureBtn');
+    await page.locator('#calMsg', {hasText: 'replacing the previous capture'}).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('#samples tbody tr').length === 1);
     const row = page.locator('#samples tbody tr', {hasText: 'Pile 7'});
     await row.waitFor();
     const cells = await row.locator('td').allTextContents();

@@ -622,9 +622,10 @@
                 longitude: p.longitude
             });
             const warn = s.moveStatus && /MOVING/.test(s.moveStatus) ? ' (camera was still moving)' : '';
+            const again = s.replaced ? ', replacing the previous capture' : '';
             msg(
                 '#calMsg',
-                `Captured ${s.name || id}: pan ${fmtN(s.ptz.x)} tilt ${fmtN(s.ptz.y)} zoom ${fmtN(s.ptz.zoom)}${warn}`,
+                `Captured ${s.name || id}: pan ${fmtN(s.ptz.x)} tilt ${fmtN(s.ptz.y)} zoom ${fmtN(s.ptz.zoom)}${again}${warn}`,
                 warn ? 'bad' : 'ok'
             );
             renderCalibration();

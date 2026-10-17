@@ -93,6 +93,7 @@ test('zone, capture into the camera set, derived bearing/range, goto, geometry q
     });
     assert.equal(cap.status, 200, JSON.stringify(cap.body));
     assert.deepEqual(cap.body.ptz, {x: 0.25, y: -0.1, zoom: 0.2});
+    assert.equal(cap.body.replaced, 0);
     // Due east of the camera along the same parallel: geodesic bearing 90.002 degrees (southern hemisphere), 989.01 m.
     assert.ok(Math.abs((cap.body.bearing * 180) / Math.PI - 90) < 0.01, `bearing ${cap.body.bearing}`);
     assert.ok(Math.abs(cap.body.range - 989.01) < 0.01, `range ${cap.body.range}`);

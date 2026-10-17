@@ -111,7 +111,7 @@ test('zones: geometry snapshot, priority, modes, calibration override, cascade d
     );
 
     // Samples on the camera set.
-    const smp = await s.addSample(
+    const {sample: smp} = await s.addSample(
         c.calibrationId,
         {waypointId: 'wp1', name: 'Pile', latitude: -27.4, longitude: 153.2},
         {x: 0.1, y: -0.2, zoom: 0.3}
@@ -131,6 +131,92 @@ test('zones: geometry snapshot, priority, modes, calibration override, cascade d
     await s2.deleteZone(z2.id);
     await s2.deleteCamera('apt');
     assert.deepEqual(s2.state.calibrations, []);
+});
+
+test('one sample per waypoint name per set: a new capture replaces the old, even if moved', async (t) => {
+    const dir = tmp(t);
+    let now = Date.UTC(2026, 9, 17, 5, 0, 0);
+    const s = new Store(dir, {now: () => now}).load();
+    const c = await s.putCamera('apt', cam);
+    const first = await s.addSample(
+        c.calibrationId,
+        {waypointId: 'w1', name: 'reef', latitude: -27.4, longitude: 153.2},
+        {x: 0.1, y: 0, zoom: 0}
+    );
+    assert.deepEqual(first.replaced, []);
+    await s.addSample(c.calibrationId, {name: 'shark', latitude: -27.41, longitude: 153.2}, {x: 0.2, y: 0, zoom: 0});
+    now += 60000;
+    // Same name, waypoint moved, different id: replaces.
+    const again = await s.addSample(
+        c.calibrationId,
+        {waypointId: 'w9', name: ' reef ', latitude: -27.405, longitude: 153.21},
+        {x: 0.15, y: 0, zoom: 0}
+    );
+    assert.equal(again.replaced.length, 1);
+    assert.equal(again.replaced[0].id, first.sample.id);
+    const names = () => s.calibration(c.calibrationId).samples.map((x) => `${x.name}@${x.longitude}`);
+    assert.deepEqual(names(), ['shark@153.2', 'reef@153.21']);
+    // Case differs: a different name.
+    await s.addSample(c.calibrationId, {name: 'Reef', latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
+    assert.equal(s.calibration(c.calibrationId).samples.length, 3);
+    // Unnamed samples never replace each other.
+    await s.addSample(c.calibrationId, {latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
+    await s.addSample(c.calibrationId, {name: '  ', latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
+    assert.equal(s.calibration(c.calibrationId).samples.length, 5);
+    // A zone override set is separate: same name there does not touch the camera set.
+    const z = await s.createZone({
+        cameraId: 'apt',
+        geometry: {ref: 'rg-1', refName: 'H', polygon: square},
+        calibrationOverride: true
+    });
+    const ov = await s.addSample(
+        z.calibrationId,
+        {name: 'reef', latitude: -27.4, longitude: 153.2},
+        {x: 0, y: 0, zoom: 0}
+    );
+    assert.deepEqual(ov.replaced, []);
+    assert.equal(s.calibration(c.calibrationId).samples.filter((x) => x.name === 'reef').length, 1);
+});
+
+test('loading keeps only the newest sample per name', (t) => {
+    const dir = tmp(t);
+    const smp = (id, name, at) => ({
+        id,
+        name,
+        latitude: -27.4,
+        longitude: 153.2,
+        ptz: {x: 0, y: 0, zoom: 0},
+        capturedAt: at
+    });
+    fs.writeFileSync(
+        path.join(dir, 'state.json'),
+        JSON.stringify({
+            version: 2,
+            settings: {holdS: 5},
+            cameras: [],
+            zones: [],
+            calibrations: [
+                {
+                    id: 'c1',
+                    owner: {type: 'camera', id: 'apt'},
+                    samples: [
+                        smp('a', 'reef', '2026-10-17T05:00:00Z'),
+                        smp('b', 'reef', '2026-10-17T05:10:00Z'),
+                        smp('c', 'shark', '2026-10-17T05:05:00Z'),
+                        smp('d', undefined, '2026-10-17T05:01:00Z'),
+                        smp('e', undefined, '2026-10-17T05:02:00Z')
+                    ]
+                }
+            ]
+        })
+    );
+    const logs = [];
+    const s = new Store(dir, {log: (m) => logs.push(m)}).load();
+    assert.deepEqual(
+        s.state.calibrations[0].samples.map((x) => x.id),
+        ['b', 'c', 'd', 'e']
+    );
+    assert.match(logs.join('\n'), /dropped 1 older same-name/);
 });
 
 test('settings: defaults, validation, persisted', async (t) => {
