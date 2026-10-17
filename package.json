@@ -5,7 +5,8 @@
     "main": "index.js",
     "keywords": [
         "signalk-node-server-plugin",
-        "signalk-category-utility"
+        "signalk-category-utility",
+        "signalk-webapp"
     ],
     "signalk-plugin-enabled-by-default": false,
     "engines": {
@@ -16,12 +17,26 @@
     "scripts": {
         "test": "node --test test/*.test.js",
         "probe": "node tools/ptz-probe.js",
-        "format": "npx -y prettier@3.3.3 --write \"lib/**/*.js\" \"tools/**/*.js\" \"test/**/*.js\"",
-        "test:node22": "npx -y -p node@22.22.2 node --test test/*.test.js"
+        "format": "npx -y prettier@3.3.3 --write index.js \"lib/**/*.js\" \"tools/**/*.js\" \"public/**/*.{js,css,html}\" \"test/**/*.js\"",
+        "test:node22": "npx -y -p node@22.22.2 node --test test/*.test.js",
+        "test:browser": "node --test --test-concurrency=1 test/browser/*.test.js",
+        "dev": "node test/sim/dev-server.js"
     },
     "dependencies": {
         "onvif": "0.8.3",
         "onvif-rc": "npm:onvif@1.0.0-rc.3",
         "xml2js": "^0.6.2"
+    },
+    "signalk": {
+        "displayName": "ONVIF Follow Me"
+    },
+    "files": [
+        "index.js",
+        "lib/",
+        "public/",
+        "README.md"
+    ],
+    "devDependencies": {
+        "playwright": "^1.64.1"
     }
 }

@@ -2,112 +2,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {runProbe} = require('../lib/probe/probe');
+const {fakeCamera: makeFake, virtualClock} = require('./sim/fake-camera');
 
-/**
- * Fake camera on a virtual clock. mode:
- *  'honest'   AbsoluteMove reaches the target, ContinuousMove moves until Stop
- *  'ack-only' accepts every move, never changes position
- *  'no-pos'   GetStatus has no Position
- */
-function fakeCamera(mode = 'honest') {
-    let t = 0;
-    const pos = {x: 0.1, y: 0.0, zoom: 0.0};
-    let target = null;
-    let vel = null;
-    const SPEED = 0.001; // units per ms
-    function advance() {
-        // Called on every status read; integrate motion since the last read.
-        const dt = t - (advance.last || 0);
-        advance.last = t;
-        if (mode === 'ack-only') return;
-        if (vel) {
-            pos.x += vel.x * SPEED * dt;
-        } else if (target) {
-            for (const k of ['x', 'y', 'zoom']) {
-                const d = target[k] - pos[k];
-                const step = Math.sign(d) * Math.min(Math.abs(d), SPEED * dt);
-                pos[k] += step;
-            }
-        }
-    }
-    const adapter = {
-        lib: 'fake-' + mode,
-        lastRaw: null,
-        profileToken: null,
-        async connect() {
-            this.profileToken = 'P0';
-        },
-        async getDeviceInformation() {
-            return {manufacturer: 'Fake', model: mode, firmwareVersion: '1'};
-        },
-        async getProfiles() {
-            return [{token: 'P0', name: 'main', ptzConfigurationToken: 'PTZ0', ptzNodeToken: 'N0'}];
-        },
-        async getPtzConfigurations() {
-            return [{token: 'PTZ0', name: 'ptz'}];
-        },
-        async getPtzConfigurationOptions() {
-            const g = 'http://www.onvif.org/ver10/tptz/';
-            return {
-                spaces: [
-                    {
-                        name: 'AbsolutePanTiltPositionSpace',
-                        uri: g + 'PanTiltSpaces/PositionGenericSpace',
-                        x: {min: -1, max: 1},
-                        y: {min: -1, max: 1}
-                    },
-                    {name: 'AbsoluteZoomPositionSpace', uri: g + 'ZoomSpaces/PositionGenericSpace', x: {min: 0, max: 1}}
-                ]
-            };
-        },
-        async getStatus() {
-            advance();
-            this.lastRaw = '<status/>';
-            if (mode === 'no-pos') return {x: null, y: null, zoom: null, moveStatus: 'IDLE'};
-            const moving = vel || (target && ['x', 'y', 'zoom'].some((k) => Math.abs(target[k] - pos[k]) > 1e-9));
-            return {
-                x: +pos.x.toFixed(4),
-                y: +pos.y.toFixed(4),
-                zoom: +pos.zoom.toFixed(4),
-                moveStatus: moving ? 'MOVING' : 'IDLE'
-            };
-        },
-        async absoluteMove(p) {
-            advance();
-            vel = null;
-            target = {...p};
-        },
-        async relativeMove(d) {
-            advance();
-            vel = null;
-            target = {x: pos.x + d.x, y: pos.y + d.y, zoom: pos.zoom + d.zoom};
-        },
-        async continuousMove(v) {
-            advance();
-            target = null;
-            vel = v;
-        },
-        async stop() {
-            advance();
-            vel = null;
-            target = null;
-        },
-        async fetchSnapshot() {
-            return {
-                uri: 'http://fake/snap.jpg',
-                status: 200,
-                contentType: 'image/jpeg',
-                auth: 'digest',
-                body: Buffer.from([0xff, 0xd8, 0, 0])
-            };
-        },
-        async getStreamUri() {
-            return 'rtsp://fake/1';
-        },
-        async close() {}
-    };
-    const wait = async (ms) => void (t += ms);
-    return {adapter, wait, now: () => t};
+function fakeCamera(mode) {
+    const clock = virtualClock();
+    const {adapter} = makeFake(mode, {clock: clock.now});
+    return {adapter, wait: clock.wait, now: clock.now};
 }
 
 const result = (r, id) => r.tests.find((t) => t.id === id).result;
@@ -120,7 +20,8 @@ test('honest camera passes every test and is restored', async () => {
     assert.equal(r.gate.absoluteMoveHonoured, true);
     const restore = r.tests.find((t) => t.id === 'restore');
     assert.match(restore.summary, /x=0.1 y=0 zoom=0/);
-    assert.ok(r.snapshot.length === 4);
+    assert.equal(r.snapshot[0], 0xff);
+    assert.equal(r.snapshot[1], 0xd8);
 });
 
 test('ACK-only camera fails the gate with a clear reason', async () => {

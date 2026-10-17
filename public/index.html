@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>ONVIF Follow Me</title>
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <header>
+            <h1>ONVIF Follow Me</h1>
+            <span id="conn" class="pill">loading</span>
+        </header>
+
+        <div id="login" class="banner" hidden>
+            Not authorised. <a href="/admin/#/login">Log in to Signal K as an admin user</a>, then reload this page.
+        </div>
+        <div id="error" class="banner error" hidden></div>
+
+        <main>
+            <section id="viewPanel" class="panel">
+                <h2>Camera view</h2>
+                <div id="view" class="view"><div class="placeholder">No camera configured</div></div>
+                <div id="status" class="status mono">pan - tilt - zoom -</div>
+                <div class="jog">
+                    <div class="pad">
+                        <button data-jog="-1,1" aria-label="up left">&#8598;</button>
+                        <button data-jog="0,1" aria-label="up">&#8593;</button>
+                        <button data-jog="1,1" aria-label="up right">&#8599;</button>
+                        <button data-jog="-1,0" aria-label="left">&#8592;</button>
+                        <button id="stopBtn" class="stop" aria-label="stop">&#9632;</button>
+                        <button data-jog="1,0" aria-label="right">&#8594;</button>
+                        <button data-jog="-1,-1" aria-label="down left">&#8601;</button>
+                        <button data-jog="0,-1" aria-label="down">&#8595;</button>
+                        <button data-jog="1,-1" aria-label="down right">&#8600;</button>
+                    </div>
+                    <div class="zoompad">
+                        <button data-zoom="1" aria-label="zoom in">+</button>
+                        <button data-zoom="-1" aria-label="zoom out">&minus;</button>
+                    </div>
+                    <label class="speed">
+                        Speed <input id="speed" type="range" min="0.05" max="1" step="0.05" value="0.3" />
+                        <span id="speedVal" class="mono">0.30</span>
+                    </label>
+                </div>
+                <form id="absForm" class="row">
+                    <label>x <input name="x" type="number" step="0.001" min="-1" max="1" required /></label>
+                    <label>y <input name="y" type="number" step="0.001" min="-1" max="1" required /></label>
+                    <label>zoom <input name="zoom" type="number" step="0.001" min="0" max="1" required /></label>
+                    <button type="submit">Go to</button>
+                    <button type="button" id="hereBtn" title="Fill with the current position">Here</button>
+                </form>
+            </section>
+
+            <section id="cameraPanel" class="panel">
+                <h2>Camera</h2>
+                <form id="cameraForm" class="grid">
+                    <label
+                        >Id <input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,31}" value="camera1"
+                    /></label>
+                    <label>Name <input name="name" /></label>
+                    <label>Host <input name="hostname" required placeholder="192.0.2.64" /></label>
+                    <label>ONVIF port <input name="port" type="number" min="1" max="65535" value="80" /></label>
+                    <label>Username <input name="username" autocomplete="off" /></label>
+                    <label
+                        >Password <input name="password" type="password" autocomplete="new-password" placeholder="" />
+                    </label>
+                    <fieldset>
+                        <legend>Camera position</legend>
+                        <label
+                            >From waypoint
+                            <select name="poseWaypoint">
+                                <option value="">(type below)</option>
+                            </select>
+                        </label>
+                        <label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90" /></label>
+                        <label
+                            >Longitude <input name="longitude" type="number" step="any" min="-180" max="180"
+                        /></label>
+                        <label>Height above water, m <input name="height" type="number" step="0.1" value="0" /></label>
+                    </fieldset>
+                    <div class="row">
+                        <button type="submit">Save camera</button>
+                        <button type="button" id="testBtn">Test connection</button>
+                    </div>
+                </form>
+                <div id="cameraMsg" class="msg"></div>
+            </section>
+
+            <section id="zonePanel" class="panel">
+                <h2>Zone</h2>
+                <form id="zoneForm" class="grid">
+                    <label
+                        >Zone
+                        <select name="zone"></select>
+                    </label>
+                    <label>Name <input name="name" required value="Zone 1" /></label>
+                    <label
+                        >Region
+                        <select name="region">
+                            <option value="">(none yet)</option>
+                        </select>
+                    </label>
+                    <div class="row">
+                        <button type="submit">Save zone</button>
+                        <button type="button" id="zoneDeleteBtn">Delete zone</button>
+                    </div>
+                </form>
+                <div id="zoneMsg" class="msg"></div>
+            </section>
+
+            <section id="calPanel" class="panel">
+                <h2>Calibration</h2>
+                <p class="hint">Pick a waypoint, jog the camera until it is centred, then capture.</p>
+                <form id="calForm" class="grid">
+                    <label
+                        >Waypoint
+                        <select name="waypoint"></select>
+                    </label>
+                    <div id="wpInfo" class="mono"></div>
+                    <div class="row">
+                        <button type="submit" id="captureBtn">Capture</button>
+                        <button type="button" id="refreshWpBtn">Reload waypoints</button>
+                    </div>
+                </form>
+                <div id="calMsg" class="msg"></div>
+                <table id="samples">
+                    <thead>
+                        <tr>
+                            <th>Waypoint</th>
+                            <th>Bearing</th>
+                            <th>Range</th>
+                            <th>Down</th>
+                            <th>In zone</th>
+                            <th>Pan</th>
+                            <th>Tilt</th>
+                            <th>Zoom</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+        </main>
+        <script src="app.js"></script>
+    </body>
+</html>
