@@ -166,6 +166,27 @@
 
     const view = snapshotView($('#view'));
 
+    // Cross hairs over the view, for centring a waypoint before capture. The choice is a
+    // per-browser convenience, so localStorage (which may be unavailable) is fine.
+    (function crosshair() {
+        const box = $('#crosshairToggle');
+        try {
+            box.checked = localStorage.getItem('onvif-followme.crosshair') !== 'off';
+        } catch {
+            // keep the default
+        }
+        const apply = () => $('.viewwrap').classList.toggle('no-crosshair', !box.checked);
+        box.addEventListener('change', () => {
+            apply();
+            try {
+                localStorage.setItem('onvif-followme.crosshair', box.checked ? 'on' : 'off');
+            } catch {
+                // not persisted; fine
+            }
+        });
+        apply();
+    })();
+
     // ---- Status poll
 
     let lastStatus = null;

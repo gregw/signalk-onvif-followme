@@ -60,6 +60,17 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.locator('#status', {hasText: 'pan 0.'}).waitFor();
     await page.locator('#conn', {hasText: 'camera connected'}).waitFor();
 
+    // Cross hairs centred on the image, toggled off and on.
+    const imgBox = await page.locator('#view img').boundingBox();
+    const dot = await page.locator('#centreDot').boundingBox();
+    assert.ok(Math.abs(dot.x + dot.width / 2 - (imgBox.x + imgBox.width / 2)) <= 1, 'dot centred horizontally');
+    assert.ok(Math.abs(dot.y + dot.height / 2 - (imgBox.y + imgBox.height / 2)) <= 1, 'dot centred vertically');
+    assert.equal(await page.locator('#crosshair').isVisible(), true);
+    await page.locator('#crosshairToggle').uncheck();
+    assert.equal(await page.locator('#crosshair').isVisible(), false);
+    await page.locator('#crosshairToggle').check();
+    assert.equal(await page.locator('#centreDot').isVisible(), true);
+
     // About 4 snapshots a second, never more.
     const snaps = () => lastCam().calls.filter((c) => c[0] === 'fetchSnapshot').length;
     const n0 = snaps();

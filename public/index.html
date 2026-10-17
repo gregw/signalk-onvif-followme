@@ -20,7 +20,27 @@
         <main>
             <section id="viewPanel" class="panel">
                 <h2>Camera view</h2>
-                <div id="view" class="view"><div class="placeholder">No camera configured</div></div>
+                <div class="viewwrap">
+                    <div id="view" class="view"><div class="placeholder">No camera configured</div></div>
+                    <!-- Centre marker for calibration. Each stroke is drawn twice, dark then light, so it
+                         shows against both sky and water. Gap in the middle keeps the target visible. -->
+                    <svg id="crosshair" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                        <g class="ch-dark">
+                            <line x1="0" y1="50" x2="46" y2="50" />
+                            <line x1="54" y1="50" x2="100" y2="50" />
+                            <line x1="50" y1="0" x2="50" y2="44" />
+                            <line x1="50" y1="56" x2="50" y2="100" />
+                        </g>
+                        <g class="ch-light">
+                            <line x1="0" y1="50" x2="46" y2="50" />
+                            <line x1="54" y1="50" x2="100" y2="50" />
+                            <line x1="50" y1="0" x2="50" y2="44" />
+                            <line x1="50" y1="56" x2="50" y2="100" />
+                        </g>
+                    </svg>
+                    <div id="centreDot" aria-hidden="true"></div>
+                </div>
+                <label class="check-inline"><input id="crosshairToggle" type="checkbox" checked /> Cross hairs</label>
                 <div id="status" class="status mono">pan - tilt - zoom -</div>
                 <div class="jog">
                     <div class="pad">
