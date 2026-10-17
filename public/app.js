@@ -670,6 +670,79 @@
         }
     });
 
+    // ---- Follow: switch, live status, tuning
+
+    let followState = null;
+    const TUNING = ['leadS', 'minIntervalS', 'panDeadband', 'tiltDeadband', 'zoomDeadband', 'speed', 'staleS'];
+
+    function renderFollow() {
+        $('#followToggle').checked = !!state.settings.followEnabled;
+        const f = $('#tuningForm');
+        for (const k of TUNING) f[k].value = state.settings[k] === null ? '' : state.settings[k];
+        f.waitIdle.checked = !!state.settings.waitIdle;
+    }
+
+    async function putSettings(body, sel) {
+        try {
+            state.settings = await api('PUT', '/settings', body);
+            renderFollow();
+            return true;
+        } catch (err) {
+            msg(sel, err.message, 'bad');
+            renderFollow();
+            return false;
+        }
+    }
+
+    $('#followToggle').addEventListener('change', async (e) => {
+        await putSettings({followEnabled: e.target.checked}, '#tuningMsg');
+        pollFollow();
+    });
+
+    $('#tuningForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const body = {waitIdle: f.waitIdle.checked};
+        for (const k of TUNING) body[k] = f[k].value === '' ? null : Number(f[k].value);
+        if (await putSettings(body, '#tuningMsg')) msg('#tuningMsg', 'Tuning saved.', 'ok');
+    });
+
+    $('#resumeBtn').addEventListener('click', async () => {
+        if (!state.cameraId) return;
+        await api('POST', `/follow/${encodeURIComponent(state.cameraId)}/resume`).catch(showError);
+        pollFollow();
+    });
+
+    let followTimer = null;
+    async function pollFollow() {
+        clearTimeout(followTimer);
+        try {
+            followState = await api('GET', '/follow');
+            const c = state.cameraId && followState.cameras[state.cameraId];
+            let text = 'off';
+            if (followState.enabled && c) {
+                if (c.zone) {
+                    const lastMove = c.last ? `, last ${c.last.ageS.toFixed(1)} s ago` : '';
+                    text = `following ${c.zone.name} (${c.zone.mode === 'fixed' ? 'fixed' : 'follow'}): ${c.reason}, ${c.sent} moves${lastMove}`;
+                } else text = c.reason;
+                if (c.pausedS > 0) text = `paused (manual control) ${Math.ceil(c.pausedS)} s`;
+                if (c.pending) {
+                    const to = c.pending.id ? (state.zones.find((z) => z.id === c.pending.id) || {}).geometry : null;
+                    text += `; changing to ${to ? to.refName : 'none'}`;
+                }
+            }
+            $('#followStatus').textContent = `Follow: ${text}`;
+            $('#resumeBtn').hidden = !(c && c.pausedS > 0);
+            const active = c && c.zone ? c.zone.id : null;
+            document.querySelectorAll('#zones tbody tr[data-zone]').forEach((tr) => {
+                tr.classList.toggle('active', tr.dataset.zone === active);
+            });
+        } catch (err) {
+            if (err.status !== 401) $('#followStatus').textContent = `Follow: ${err.message}`;
+        }
+        followTimer = setTimeout(pollFollow, document.hidden ? 5000 : 1000);
+    }
+
     // ---- Export / import of zones and calibration (import replaces)
 
     $('#exportBtn').href = `${API}/export`;
@@ -922,9 +995,11 @@
         renderZones();
         renderWaypointSelect();
         renderCalibration();
+        renderFollow();
         view.setCamera(state.cameraId);
         view.start();
         pollStatus();
+        pollFollow();
     }
 
     init();

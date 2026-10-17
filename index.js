@@ -2,10 +2,9 @@
 /*
  * signalk-onvif-followme: Signal K server plugin entry point.
  *
- * Phase 1: configuration and calibration only, no auto-aiming yet.
- *
  * Layers (keep them distinct):
- *  - Data model paths consumed: none yet (followme will read self navigation.position).
+ *  - Data model paths consumed: self navigation.position, navigation.courseOverGroundTrue,
+ *    navigation.speedOverGround (lib/plugin/follower.js).
  *  - Data model paths published: none.
  *  - REST endpoints: /plugins/signalk-onvif-followme/* (lib/plugin/routes.js), admin only
  *    when security is on.
@@ -21,6 +20,7 @@
 const {Store} = require('./lib/plugin/store');
 const {CameraManager} = require('./lib/plugin/cameras');
 const {addRoutes} = require('./lib/plugin/routes');
+const {Follower} = require('./lib/plugin/follower');
 const {createAdapter, LIBS} = require('./lib/adapter');
 
 const PLUGIN_ID = 'signalk-onvif-followme';
@@ -52,13 +52,18 @@ module.exports = function (app, deps = {}) {
             lib: LIBS.includes(options.lib) ? options.lib : 'agsh',
             log
         });
-        ctx = {store, cameras};
+        const follower = new Follower({app, store, cameras, log, ...(deps.follower || {})});
+        follower.start();
+        ctx = {store, cameras, follower};
         const n = store.state.cameras.length;
         app.setPluginStatus(`Started: ${n} camera${n === 1 ? '' : 's'}, ${store.state.zones.length} zones`);
     };
 
     plugin.stop = function () {
-        if (ctx) ctx.cameras.closeAll();
+        if (ctx) {
+            ctx.follower.stop();
+            ctx.cameras.closeAll();
+        }
         ctx = null;
     };
 

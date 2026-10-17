@@ -10,6 +10,11 @@
         <header>
             <h1>ONVIF Follow Me</h1>
             <span id="conn" class="pill">loading</span>
+            <label class="switch" title="Aim the camera at this vessel while it is in a zone">
+                <input id="followToggle" type="checkbox" /> Follow
+            </label>
+            <span id="followStatus" class="mono small"></span>
+            <button type="button" id="resumeBtn" hidden>Resume</button>
         </header>
 
         <div id="login" class="banner" hidden>
@@ -172,6 +177,41 @@
                     <input id="importFile" type="file" accept="application/json,.json" hidden />
                 </div>
                 <div id="zoneMsg" class="msg"></div>
+            </section>
+
+            <section id="tuningPanel" class="panel">
+                <details id="tuningDetails">
+                    <summary>Follow tuning</summary>
+                    <form id="tuningForm" class="grid">
+                        <label title="Aim where the boat will be this far ahead, from COG and SOG"
+                            >Lead, s <input name="leadS" type="number" min="0" max="30" step="any"
+                        /></label>
+                        <label title="Minimum time between camera moves"
+                            >Min interval, s <input name="minIntervalS" type="number" min="0.1" max="60" step="any"
+                        /></label>
+                        <label title="Pan changes smaller than this are not sent (1 unit is about 180 degrees)"
+                            >Pan deadband <input name="panDeadband" type="number" min="0" max="0.5" step="any"
+                        /></label>
+                        <label title="Tilt changes smaller than this are not sent"
+                            >Tilt deadband <input name="tiltDeadband" type="number" min="0" max="0.5" step="any"
+                        /></label>
+                        <label title="Zoom changes smaller than this are held, to avoid zoom and focus hunting"
+                            >Zoom deadband <input name="zoomDeadband" type="number" min="0" max="1" step="any"
+                        /></label>
+                        <label title="AbsoluteMove speed 0..1; blank uses the camera default"
+                            >Move speed
+                            <input name="speed" type="number" min="0.01" max="1" step="any" placeholder="camera"
+                        /></label>
+                        <label title="Stop following when no position has arrived for this long"
+                            >Stale after, s <input name="staleS" type="number" min="1" max="600" step="any"
+                        /></label>
+                        <label class="check" title="Do not send a move while the camera reports MOVING"
+                            ><input name="waitIdle" type="checkbox" /> Wait for idle</label
+                        >
+                        <div class="row"><button type="submit">Save tuning</button></div>
+                    </form>
+                    <div id="tuningMsg" class="msg"></div>
+                </details>
             </section>
 
             <section id="cameraPanel" class="panel">

@@ -124,7 +124,16 @@ const DEFAULT_RESOURCES = {
 async function startDevServer({port = 0, resources = DEFAULT_RESOURCES, cameraMode = 'honest', clock = Date.now} = {}) {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onvif-followme-'));
     const cameras = [];
+    // Stand-in for app.subscriptionmanager: keeps the plugin's delta callback so tests (and
+    // manual poking) can play a simulated boat with srv.boat(lat, lon, cogRad, sogMs).
+    let onDelta = null;
     const app = {
+        subscriptionmanager: {
+            subscribe: (cmd, unsubscribes, onError, cb) => {
+                onDelta = cb;
+                unsubscribes.push(() => (onDelta = null));
+            }
+        },
         debug: () => {},
         error: (m) => console.error(m),
         getDataDirPath: () => dataDir,
@@ -186,6 +195,12 @@ async function startDevServer({port = 0, resources = DEFAULT_RESOURCES, cameraMo
         dataDir,
         setFail(status) {
             failWith = status;
+        },
+        boat(latitude, longitude, cog = null, sog = null) {
+            const values = [{path: 'navigation.position', value: {latitude, longitude}}];
+            if (cog !== null) values.push({path: 'navigation.courseOverGroundTrue', value: cog});
+            if (sog !== null) values.push({path: 'navigation.speedOverGround', value: sog});
+            if (onDelta) onDelta({context: 'vessels.urn:mrn:imo:mmsi:000000000', updates: [{values}]});
         },
         async close() {
             plugin.stop();

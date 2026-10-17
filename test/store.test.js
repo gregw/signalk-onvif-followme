@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {Store} = require('../lib/plugin/store');
+const {Store, DEFAULT_SETTINGS} = require('../lib/plugin/store');
 
 function tmp(t) {
     const d = fs.mkdtempSync(path.join(os.tmpdir(), 'store-'));
@@ -281,10 +281,15 @@ test('export then import round trip; import replaces; bad files change nothing',
 test('settings: defaults, validation, persisted', async (t) => {
     const dir = tmp(t);
     const s = new Store(dir).load();
-    assert.deepEqual(s.state.settings, {holdS: 5});
-    await assert.rejects(s.putSettings({holdS: -1}), {status: 400});
-    await s.putSettings({holdS: 3});
-    assert.deepEqual(new Store(dir).load().state.settings, {holdS: 3});
+    assert.deepEqual(s.state.settings, DEFAULT_SETTINGS);
+    await assert.rejects(s.putSettings({holdS: -1}), {status: 400, message: /holdS must be 0..600 s/});
+    await assert.rejects(s.putSettings({nope: 1}), {status: 400, message: /unknown setting/});
+    await assert.rejects(s.putSettings({holdS: 3, speed: 2}), {status: 400, message: /speed/});
+    assert.equal(s.state.settings.holdS, 5, 'a rejected update changes nothing');
+    await s.putSettings({holdS: 3, followEnabled: true, speed: 0.4});
+    await s.putSettings({speed: null});
+    const loaded = new Store(dir).load().state.settings;
+    assert.deepEqual(loaded, {...DEFAULT_SETTINGS, holdS: 3, followEnabled: true, speed: null});
 });
 
 test('a v2 file with the dropped edgeMarginM setting loads without it', (t) => {
@@ -293,7 +298,7 @@ test('a v2 file with the dropped edgeMarginM setting loads without it', (t) => {
         path.join(dir, 'state.json'),
         JSON.stringify({version: 2, settings: {edgeMarginM: 10, holdS: 7}, cameras: [], zones: [], calibrations: []})
     );
-    assert.deepEqual(new Store(dir).load().state.settings, {holdS: 7});
+    assert.deepEqual(new Store(dir).load().state.settings, {...DEFAULT_SETTINGS, holdS: 7});
 });
 
 test('loading drops old zone names and zones without a region', (t) => {

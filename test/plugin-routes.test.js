@@ -84,7 +84,8 @@ test('zone, capture into the camera set, derived bearing/range, goto, geometry q
     const zoneId = z.body.id;
     const st = await call('GET', '/state');
     const calId = st.body.cameras.find((c) => c.id === 'apt').calibrationId;
-    assert.deepEqual(st.body.settings, {holdS: 5});
+    assert.equal(st.body.settings.holdS, 5);
+    assert.equal(st.body.settings.followEnabled, false);
 
     await call('POST', '/camera/apt/move', {mode: 'absolute', x: 0.25, y: -0.1, zoom: 0.2});
     await settle();

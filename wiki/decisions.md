@@ -79,3 +79,24 @@ submitting it restarts the plugin and rewrites the options file). The file holds
 calibration sets only: no cameras, credentials or settings. Import replaces all zones and
 calibration after a confirmation naming what is lost; the file is fully validated first
 (zones must name cameras configured here) and applied in one atomic save.
+
+## 2026-10-17: Follow loop (lib/plugin/follower.js, lib/engine/controller.js)
+
+- Self `navigation.position`, `navigation.courseOverGroundTrue`, `navigation.speedOverGround`
+  through `app.subscriptionmanager.subscribe` (as signalk-nemesis on the same server).
+  Fix age from receipt time.
+- Every 250 ms per camera: zone (selector on the actual position, hold applies), aim (on
+  the position predicted `leadS` ahead along COG/SOG), controller (per axis deadband held
+  at the last commanded value; min interval; optional wait for idle), AbsoluteMove with
+  optional speed. Outside all zones nothing is sent. A tick is skipped while the previous
+  one for that camera is running.
+- During the release hold the zone stays active, so the camera keeps following a little
+  past the edge rather than freezing at it.
+- Off by default (`followEnabled`). Any manual camera command pauses following on that
+  camera for 30 s; Resume ends the pause. Switching off resets zone and last move.
+- All motion knobs are settings, tuned in the webapp: leadS 2, minIntervalS 1,
+  panDeadband 0.003, tiltDeadband 0.003, zoomDeadband 0.02, speed camera default,
+  waitIdle false, staleS 10. Defaults are guesses until tried on the water: in particular
+  whether this camera accepts a new AbsoluteMove mid-move (Phase 0 did not test it).
+- At constant range the pan deadband sets the update rate: 5 m/s at 1 km crosses 0.003
+  every ~1.9 s, giving ~0.5 degree steps.

@@ -287,7 +287,7 @@ test('capture without any zone goes to the camera set; fixed zone view; override
         await page.click('#settingsBtn');
         await page.locator('#zoneMsg', {hasText: 'Hold saved'}).waitFor();
         st = await (await fetch(fresh.api + '/state')).json();
-        assert.deepEqual(st.settings, {holdS: 3});
+        assert.equal(st.settings.holdS, 3);
         assert.equal(st.zones[0].mode.type, 'fixed');
         assert.equal(st.zones[0].priority, 5);
         assert.deepEqual(st.zones[0].mode.ptz, {x: -0.3, y: 0.2, zoom: 0});
@@ -427,6 +427,106 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         fs.rmSync(dir, {recursive: true, force: true});
 
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'aim.png'), fullPage: true});
+        assert.deepEqual(errors, []);
+    } finally {
+        await ctx.close();
+        await fresh.close();
+    }
+});
+
+test('follow: switch on, boat enters a zone, camera aims, manual jog pauses, resume', async () => {
+    const fresh = await startDevServer();
+    const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
+    try {
+        const page = await ctx.newPage();
+        const errors = [];
+        page.on('pageerror', (e) => errors.push(e.message));
+        const post = (p, b) =>
+            fetch(fresh.api + p, {
+                method: p.startsWith('/settings') || p.startsWith('/cameras/') ? 'PUT' : 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(b)
+            }).then((r) => r.json());
+        // Camera at -27.4, 153.19, 30 m; Harbour zone east of it; fixed view zone Close in.
+        await post('/cameras/cam', {
+            conn: {hostname: 'h'},
+            pose: {position: {latitude: -27.4, longitude: 153.19, height: 30}}
+        });
+        const st = await (await fetch(fresh.api + '/state')).json();
+        const calId = st.cameras[0].calibrationId;
+        const R = DEFAULT_RESOURCES.regions['rg-harbour'];
+        await post('/zones', {
+            cameraId: 'cam',
+            geometry: {ref: 'rg-harbour', refName: 'Harbour', polygon: R.feature.geometry}
+        });
+        for (const [lat, lon, x] of [
+            [-27.398, 153.2, 0.1],
+            [-27.41, 153.21, 0.4]
+        ]) {
+            await fetch(fresh.api + '/camera/cam/move', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: 'absolute', x, y: -0.2, zoom: 0.3})
+            });
+            await new Promise((r) => setTimeout(r, 600));
+            await post(`/calibration/${calId}`, {latitude: lat, longitude: lon});
+        }
+        await post('/follow/cam/resume', {});
+        await post('/settings', {holdS: 0, leadS: 0, minIntervalS: 0.5});
+
+        await page.goto(fresh.url);
+        await page.locator('#followStatus', {hasText: 'Follow: off'}).waitFor();
+        await page.check('#followToggle');
+        await page.locator('#followStatus', {hasText: 'no position yet'}).waitFor();
+
+        // Simulated boat in the zone.
+        fresh.boat(-27.404, 153.205);
+        await page.locator('#followStatus', {hasText: 'following Harbour (follow)'}).waitFor();
+        await page.waitForFunction(() => document.querySelector('#zones tbody tr.active'));
+        const cam = () => fresh.cameras[fresh.cameras.length - 1].adapter;
+        const moved = () => cam().calls.filter((c) => c[0] === 'absoluteMove').length;
+        const n = moved();
+        assert.ok(n >= 1);
+        // Keep the fix fresh while it moves along.
+        const timer = setInterval(() => fresh.boat(-27.404, 153.207), 500);
+        try {
+            // Manual jog pauses following; Resume ends the pause.
+            await page.locator('[data-jog="1,0"]').hover();
+            await page.mouse.down();
+            await page.waitForTimeout(300);
+            await page.mouse.up();
+            await page.locator('#followStatus', {hasText: 'paused (manual control)'}).waitFor();
+            const m = moved();
+            await page.waitForTimeout(1200);
+            assert.equal(moved(), m, 'no follow moves while paused');
+            await page.click('#resumeBtn');
+            await page.locator('#followStatus', {hasText: 'following Harbour'}).waitFor();
+            await new Promise((r) => setTimeout(r, 800));
+            assert.ok(moved() > m, 'following again after resume');
+        } finally {
+            clearInterval(timer);
+        }
+
+        // Tuning saves.
+        await page.click('#tuningDetails summary');
+        await page.fill('#tuningForm [name=leadS]', '3');
+        await page.fill('#tuningForm [name=speed]', '0.5');
+        await page.click('#tuningForm button[type=submit]');
+        await page.locator('#tuningMsg', {hasText: 'Tuning saved'}).waitFor();
+        const s2 = (await (await fetch(fresh.api + '/state')).json()).settings;
+        assert.equal(s2.leadS, 3);
+        assert.equal(s2.speed, 0.5);
+        assert.equal(s2.followEnabled, true);
+        await page.fill('#tuningForm [name=speed]', '');
+        await page.click('#tuningForm button[type=submit]');
+        await page.locator('#tuningMsg', {hasText: 'Tuning saved'}).waitFor();
+        assert.equal((await (await fetch(fresh.api + '/state')).json()).settings.speed, null);
+
+        // Switch off.
+        await page.uncheck('#followToggle');
+        await page.locator('#followStatus', {hasText: 'Follow: off'}).waitFor();
+        await page.waitForFunction(() => !document.querySelector('#zones tbody tr.active'));
+        if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'follow.png'), fullPage: true});
         assert.deepEqual(errors, []);
     } finally {
         await ctx.close();

@@ -90,7 +90,8 @@ main {
 #zonePanel {
     grid-column: 2;
 }
-#cameraPanel {
+#cameraPanel,
+#tuningPanel {
     grid-column: 1 / -1;
 }
 @media (max-width: 900px) {
@@ -441,4 +442,35 @@ button.stale {
 }
 #zoneAdd select[name='region'] {
     max-width: 130px;
+}
+.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    margin-left: 8px;
+}
+.switch input {
+    width: 18px;
+    height: 18px;
+}
+header {
+    flex-wrap: wrap;
+}
+#followStatus {
+    color: var(--muted);
+    min-width: 0;
+}
+#zones tbody tr.active td {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+#tuningPanel {
+    padding: 10px 14px;
+}
+#tuningDetails summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+#tuningDetails[open] summary {
+    margin-bottom: 12px;
 }
