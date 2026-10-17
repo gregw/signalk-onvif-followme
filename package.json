@@ -1,7 +1,7 @@
 {
     "name": "signalk-onvif-followme",
-    "version": "0.0.1",
-    "description": "Signal K plugin that aims a fixed ONVIF PTZ camera at a Signal K position while it is inside a visibility zone.",
+    "version": "0.1.0",
+    "description": "Signal K plugin that makes a shore-mounted ONVIF pan-tilt-zoom webcam follow your boat while it is inside zones drawn in Freeboard.",
     "main": "index.js",
     "keywords": [
         "signalk-node-server-plugin",
@@ -14,13 +14,22 @@
     },
     "author": "gregw@mortbay.com",
     "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/gregw/signalk-onvif-followme.git"
+    },
+    "homepage": "https://github.com/gregw/signalk-onvif-followme#readme",
+    "bugs": {
+        "url": "https://github.com/gregw/signalk-onvif-followme/issues"
+    },
     "scripts": {
         "test": "node --test test/*.test.js",
         "probe": "node tools/ptz-probe.js",
         "format": "npx -y prettier@3.3.3 --write index.js \"lib/**/*.js\" \"tools/**/*.js\" \"public/**/*.{js,css,html}\" \"test/**/*.js\"",
         "test:node22": "npx -y -p node@22.22.2 node --test test/*.test.js",
         "test:browser": "node --test --test-concurrency=1 test/browser/*.test.js",
-        "dev": "node test/sim/dev-server.js"
+        "dev": "node test/sim/dev-server.js",
+        "pack": "mkdir -p dist && npm pack --pack-destination dist"
     },
     "dependencies": {
         "onvif": "0.8.3",
