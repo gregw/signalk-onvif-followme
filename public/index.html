@@ -238,10 +238,19 @@
                     /></label>
                     <button type="button" id="settingsBtn">Save hold</button>
                     <span class="spacer"></span>
-                    <a id="exportBtn" class="button" href="#" download title="Download zones and calibration as JSON"
+                    <a
+                        id="exportBtn"
+                        class="button"
+                        href="#"
+                        download
+                        title="Download all configuration (except camera passwords) as JSON"
                         >Export</a
                     >
-                    <button type="button" id="importBtn" title="Replace all zones and calibration from a file">
+                    <button
+                        type="button"
+                        id="importBtn"
+                        title="Replace all configuration from a file (camera passwords are kept)"
+                    >
                         Import
                     </button>
                     <input id="importFile" type="file" accept="application/json,.json" hidden />

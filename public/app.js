@@ -854,20 +854,35 @@
         } catch {
             return msg('#zoneMsg', `${file.name} is not JSON.`, 'bad');
         }
+        const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
         const count = (d) =>
-            `${(d.zones || []).length} zones and ` +
-            `${(d.calibrations || []).reduce((n, c) => n + ((c && c.samples) || []).length, 0)} calibration samples`;
-        const now = {zones: state.zones, calibrations: []};
+            (d.version === 1 ? '' : `${plural((d.cameras || []).length, 'camera')}, settings, `) +
+            `${plural((d.zones || []).length, 'zone')} and ` +
+            plural(
+                (d.calibrations || []).reduce((n, c) => n + ((c && c.samples) || []).length, 0),
+                'calibration sample'
+            );
+        let now = {cameras: state.cameras, zones: state.zones, calibrations: []};
         try {
-            now.calibrations = (await api('GET', '/export')).calibrations;
+            now = await api('GET', '/export');
         } catch {
             // counts only; carry on
         }
-        if (!confirm(`Replace ${count(now)} with ${count(data)} from ${file.name}?`)) return;
+        if (data.version === 1) now = {...now, version: 1};
+        const what = data.version === 1 ? '' : ' (camera passwords are kept)';
+        if (!confirm(`Replace ${count(now)} with ${count(data)} from ${file.name}${what}?`)) return;
         try {
             const r = await api('POST', '/import', data);
             await reloadState();
-            msg('#zoneMsg', `Imported ${r.zones} zones and ${r.samples} samples from ${file.name}.`, 'ok');
+            const cams = r.cameras !== undefined ? `${plural(r.cameras, 'camera')}, ` : '';
+            const pw = r.needPassword && r.needPassword.length;
+            msg(
+                '#zoneMsg',
+                `Imported ${cams}${plural(r.zones, 'zone')} and ${plural(r.samples, 'sample')} from ${file.name}.` +
+                    (pw ? ` Set the password for camera ${r.needPassword.join(', ')} in the camera settings.` : ''),
+                pw ? 'bad' : 'ok'
+            );
+            if (pw) $('#cameraDetails').open = true;
         } catch (err) {
             msg('#zoneMsg', err.message, 'bad');
         }
@@ -879,9 +894,15 @@
         state.zones = s.zones;
         state.settings = s.settings;
         state.calId = null;
+        if (!state.cameras.some((c) => c.id === state.cameraId)) {
+            state.cameraId = state.cameras.length ? state.cameras[0].id : null;
+            $('#cameraForm').id.readOnly = false;
+            view.setCamera(state.cameraId);
+        }
         renderCamera();
         renderZones();
         renderCalibration();
+        renderFollow();
     }
 
     // ---- Calibration

@@ -250,6 +250,9 @@ test('export download and import replace over HTTP', async () => {
     const imp = await call('POST', '/import', file);
     assert.equal(imp.status, 200);
     assert.equal(imp.body.zones, file.zones.length);
+    assert.equal(imp.body.cameras, file.cameras.length);
+    assert.deepEqual(imp.body.needPassword, []);
+    assert.equal(JSON.stringify(file).includes('"pw"'), false, 'no password in the export');
     assert.equal((await call('POST', '/import', {format: 'x'})).status, 400);
 });
 

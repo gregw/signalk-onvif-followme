@@ -75,10 +75,16 @@ can be moved in Freeboard and tested again without reloading.
 ## 2026-10-17: Export and import
 
 From the webapp, not the admin UI plugin config (a schema form: no file transfer, and
-submitting it restarts the plugin and rewrites the options file). The file holds zones and
-calibration sets only: no cameras, credentials or settings. Import replaces all zones and
-calibration after a confirmation naming what is lost; the file is fully validated first
-(zones must name cameras configured here) and applied in one atomic save.
+submitting it restarts the plugin and rewrites the options file).
+
+Export file version 2 holds all configuration except camera passwords: cameras
+(connection and position), settings, zones and calibration sets. Import replaces it all
+after a confirmation naming what is lost; the file is fully validated first and applied in
+one atomic save. Each imported camera keeps the password stored on this server under the
+same id; a camera new to the server has none and the result lists it (`needPassword`). A
+password present in a file is ignored. Version 1 files (zones and calibration only, first
+format) still import and leave cameras and settings alone. The ONVIF library choice is a
+plugin option in the admin UI and is not part of the file.
 
 ## 2026-10-17: Follow loop (lib/plugin/follower.js, lib/engine/controller.js)
 

@@ -405,6 +405,8 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         assert.match(dl.suggestedFilename(), /^onvif-followme-.*\.json$/);
         const exported = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
         assert.equal(exported.zones.length, 1);
+        assert.equal(exported.cameras.length, 1);
+        assert.equal('password' in exported.cameras[0].conn, false);
         const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'imp-'));
         const empty = path.join(dir, 'empty.json');
         fs.writeFileSync(empty, JSON.stringify({...exported, zones: [], calibrations: []}));
@@ -414,14 +416,17 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
             d.accept();
         });
         await page.setInputFiles('#importFile', empty);
-        await page.locator('#zoneMsg', {hasText: 'Imported 0 zones and 0 samples'}).waitFor();
-        assert.match(dialog, /Replace 1 zones and 2 calibration samples with 0 zones and 0 calibration samples/);
+        await page.locator('#zoneMsg', {hasText: 'Imported 1 camera, 0 zones and 0 samples'}).waitFor();
+        assert.match(
+            dialog,
+            /Replace 1 camera, settings, 1 zone and 2 calibration samples with 1 camera, settings, 0 zones and 0 calibration samples from empty.json \(camera passwords are kept\)/
+        );
         await page.locator('#zones', {hasText: 'No zones yet'}).waitFor();
         await page.locator('#samples', {hasText: 'No samples yet'}).waitFor();
         const back = path.join(dir, 'back.json');
         fs.writeFileSync(back, JSON.stringify(exported));
         await page.setInputFiles('#importFile', back);
-        await page.locator('#zoneMsg', {hasText: 'Imported 1 zones and 2 samples'}).waitFor();
+        await page.locator('#zoneMsg', {hasText: 'Imported 1 camera, 1 zone and 2 samples'}).waitFor();
         await page.locator('#samples tbody tr', {hasText: 'Harbour mouth'}).waitFor();
         await page.locator('#zones tbody tr', {hasText: 'Harbour West'}).waitFor();
         fs.rmSync(dir, {recursive: true, force: true});

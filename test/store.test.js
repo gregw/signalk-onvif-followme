@@ -219,9 +219,10 @@ test('loading keeps only the newest sample per name', (t) => {
     assert.match(logs.join('\n'), /dropped 1 older same-name/);
 });
 
-test('export then import round trip; import replaces; bad files change nothing', async (t) => {
+test('export then import round trip: everything but passwords; import replaces; bad files change nothing', async (t) => {
     const s = new Store(tmp(t)).load();
     const c = await s.putCamera('apt', cam);
+    await s.putSettings({holdS: 7, followEnabled: true, speed: 0.005});
     const geometry = (ref, refName) => ({ref, refName, polygon: square});
     const z1 = await s.createZone({cameraId: 'apt', geometry: geometry('rg-1', 'Harbour')});
     const z2 = await s.createZone({
@@ -239,23 +240,47 @@ test('export then import round trip; import replaces; bad files change nothing',
     );
     const file = JSON.parse(JSON.stringify(s.exportData()));
     assert.equal(file.format, 'signalk-onvif-followme');
-    assert.equal(JSON.stringify(file).includes('secret'), false, 'no camera credentials in the export');
-    assert.equal('cameras' in file, false);
+    assert.equal(file.version, 2);
+    assert.equal(JSON.stringify(file).includes('secret'), false, 'no camera password in the export');
+    assert.equal(file.cameras[0].conn.hostname, '10.0.0.5');
+    assert.equal('password' in file.cameras[0].conn, false);
+    assert.equal(file.settings.holdS, 7);
 
-    // A second server with the same camera id, different zones: import replaces them.
+    // A second server: same camera id with its own password, another camera, other zones.
     const s2 = new Store(tmp(t)).load();
-    await s2.putCamera('apt', {...cam, conn: {...cam.conn, password: 'other'}});
+    await s2.putCamera('apt', {...cam, conn: {...cam.conn, hostname: 'old-host', password: 'other'}});
+    await s2.putCamera('gone', {conn: {hostname: 'x'}});
     await s2.createZone({cameraId: 'apt', geometry: geometry('rg-9', 'Gone')});
-    assert.deepEqual(await s2.importData(file), {zones: 2, samples: 2});
+    const res = await s2.importData(file);
+    assert.deepEqual(res, {cameras: 1, zones: 2, samples: 2, needPassword: []});
+    assert.deepEqual(
+        s2.state.cameras.map((x) => x.id),
+        ['apt'],
+        'cameras replaced'
+    );
+    assert.equal(s2.camera('apt').conn.hostname, '10.0.0.5');
+    assert.equal(s2.camera('apt').conn.password, 'other', 'password kept from this server');
+    assert.deepEqual(s2.camera('apt').pose.position, cam.pose.position);
+    assert.equal(s2.state.settings.holdS, 7);
+    assert.equal(s2.state.settings.followEnabled, true);
+    assert.equal(s2.state.settings.speed, 0.005);
     assert.deepEqual(
         s2.state.zones.map((z) => z.geometry.refName),
         ['Harbour', 'Close']
     );
     assert.deepEqual(s2.zone(z2.id).mode.ptz, {x: 0.1, y: 0.2, zoom: 0.3});
     assert.equal(s2.camera('apt').calibrationId, c.calibrationId);
-    assert.equal(s2.camera('apt').conn.password, 'other', 'camera untouched');
     assert.equal(s2.zoneCalibration(z2.id).samples[0].name, 'pile');
     assert.equal(s2.zoneCalibration(z1.id).samples[0].name, 'reef');
+
+    // A server that never had the camera: imported without a password, flagged.
+    const s3 = new Store(tmp(t)).load();
+    const r3 = await s3.importData({
+        ...file,
+        cameras: file.cameras.map((x) => ({...x, conn: {...x.conn, password: 'injected'}}))
+    });
+    assert.deepEqual(r3.needPassword, ['apt']);
+    assert.equal(s3.camera('apt').conn.password, '', 'a password in the file is never imported');
 
     // Bad files: rejected, nothing changed.
     const before = JSON.stringify(s2.state);
@@ -265,17 +290,48 @@ test('export then import round trip; import replaces; bad files change nothing',
         return assert.rejects(s2.importData(f), {status: 400, message: re});
     };
     await assert.rejects(s2.importData({hello: 1}), {status: 400, message: /export file/});
-    await bad((f) => (f.zones[0].cameraId = 'nope'), /not configured here/);
+    await bad((f) => (f.version = 9), /version 9/);
+    await bad((f) => (f.zones[0].cameraId = 'nope'), /not configured/);
+    await bad((f) => (f.cameras = []), /not configured/);
+    await bad((f) => (f.cameras[0].conn.port = 0), /camera apt: conn.port/);
+    await bad((f) => f.cameras.push(f.cameras[0]), /duplicate camera ids/);
+    await bad((f) => (f.settings.holdS = -1), /setting holdS/);
     await bad((f) => (f.zones[1].calibrationId = 'missing'), /missing from the file/);
     await bad((f) => (f.calibrations[0].samples[0].latitude = 'x'), /latitude/);
     await bad((f) => f.zones.push({...f.zones[0], id: 'dup'}), /two zones for region/);
     await bad((f) => delete f.zones[0].geometry.refName, /refName/);
     assert.equal(JSON.stringify(s2.state), before);
 
-    // Empty file: no zones, camera keeps an (empty) calibration set.
-    await s2.importData({...file, zones: [], calibrations: []});
-    assert.deepEqual(s2.state.zones, []);
-    assert.deepEqual(s2.calibration(s2.camera('apt').calibrationId).samples, []);
+    // Unknown settings from a newer version are ignored.
+    await s2.importData({...file, settings: {...file.settings, futureKnob: 3}});
+    assert.equal('futureKnob' in s2.state.settings, false);
+});
+
+test('a version 1 file (zones and calibration only) leaves cameras and settings alone', async (t) => {
+    const s = new Store(tmp(t)).load();
+    const c = await s.putCamera('apt', cam);
+    await s.putSettings({holdS: 9});
+    const v1 = {
+        format: 'signalk-onvif-followme',
+        version: 1,
+        zones: [
+            {
+                id: 'z1',
+                cameraId: 'apt',
+                priority: 1,
+                geometry: {ref: 'rg-1', refName: 'Harbour', polygon: square},
+                mode: {type: 'followme'},
+                calibrationId: null
+            }
+        ],
+        calibrations: [{id: 'cal-1', owner: {type: 'camera', id: 'apt'}, samples: []}]
+    };
+    const r = await s.importData(v1);
+    assert.equal(r.zones, 1);
+    assert.equal(s.camera('apt').conn.password, 'secret');
+    assert.equal(s.camera('apt').calibrationId, 'cal-1');
+    assert.notEqual(s.camera('apt').calibrationId, c.calibrationId);
+    assert.equal(s.state.settings.holdS, 9);
 });
 
 test('settings: defaults, validation, persisted', async (t) => {
