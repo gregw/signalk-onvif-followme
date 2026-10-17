@@ -1,5 +1,5 @@
 {
-    "name": "signalk-ptz-followme",
+    "name": "signalk-onvif-followme",
     "version": "0.0.1",
     "description": "Signal K plugin that aims a fixed ONVIF PTZ camera at a Signal K position while it is inside a visibility zone.",
     "main": "index.js",

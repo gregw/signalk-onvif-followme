@@ -1,6 +1,6 @@
-# signalk-ptz-followme
+# signalk-onvif-followme
 
-Signal K plugin (in progress) that aims a fixed ONVIF PTZ camera at a Signal K position while it is inside a visibility zone. See `wiki/signalk-ptz-followme-brief.md`.
+Signal K plugin (in progress) that aims a fixed ONVIF PTZ camera at a Signal K position while it is inside a visibility zone. See `wiki/signalk-onvif-followme-brief.md`.
 
 ## Status: Phase 0
 

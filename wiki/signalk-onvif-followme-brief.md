@@ -1,6 +1,6 @@
-# signalk-ptz-followme — Build Brief
+# signalk-onvif-followme — Build Brief
 
-**Status:** greenfield. Package name provisional (`signalk-ptz-followme`); set the display `name` separately when finalised.
+**Status:** greenfield. Package name `signalk-onvif-followme` (renamed from the provisional `signalk-ptz-followme`, 2026-10-17); set the display `name` separately when finalised.
 
 ## Goal
 
