@@ -1,10 +1,16 @@
 # signalk-onvif-followme
 
-Signal K plugin (in progress) that aims a fixed ONVIF PTZ camera at a Signal K position while it is inside a visibility zone. See `wiki/signalk-onvif-followme-brief.md`.
+A Signal K server plugin that turns a fixed pan-tilt-zoom webcam into a camera that follows one particular boat. The camera is mounted ashore (a balcony, a clubhouse, a headland) and speaks ONVIF; the boat is the Signal K server's own vessel, whose GPS position reaches the server as `navigation.position`. While that boat is inside one of the zones you draw on the chart in Freeboard, the plugin works out the bearing and range from the camera to the boat and steers the camera to keep it in view, panning as it sails past and zooming as it comes closer or moves away. When the boat leaves every zone the camera is released back to its own scan. A zone can instead hold one fixed wide view, for places where the boat is too close for smooth panning.
 
-## Status: Phase 0
+The camera is calibrated by pointing it at a few waypoints and capturing where it was looking, so no measurements of the mount are needed. The project brief is in `wiki/signalk-onvif-followme-brief.md`; decisions made since are in `wiki/decisions.md`.
 
-Command line camera capability tests only. No plugin yet.
+## Status
+
+Working: camera connection, calibration, zones from Freeboard regions, follow loop with tuning, and export/import of the configuration, all through the webapp at `/signalk-onvif-followme/`. Following is switched on and watched from the webapp's **Follow live** pop-up.
+
+## Phase 0 camera tools
+
+Command line tests and commands for an ONVIF camera, used to prove the camera before the plugin was built.
 
 ```sh
 npm install
