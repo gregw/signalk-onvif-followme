@@ -502,7 +502,7 @@
             const name = el('td', {textContent: zoneName(z) + (gone ? ' (region deleted)' : '')});
 
             const mode = el('select', {'aria-label': 'mode'});
-            mode.append(new Option('Follow me', 'followme'), new Option('Fixed view', 'fixed'));
+            mode.append(new Option('Follow', 'followme'), new Option('Fixed', 'fixed'));
             mode.value = z.mode.type;
             mode.onchange = () => saveZone(z, {mode: {type: mode.value}});
 
@@ -526,7 +526,7 @@
 
             const view = el('td', {className: 'view-cell'});
             if (z.mode.type === 'fixed') {
-                const set = el('button', {type: 'button', textContent: 'Use current'});
+                const set = el('button', {type: 'button', textContent: 'Set', title: 'Use the current camera view'});
                 set.onclick = async () => {
                     try {
                         storeZone(await api('POST', `/zones/${z.id}/view`));
@@ -535,15 +535,21 @@
                         msg('#zoneMsg', err.message, 'bad');
                     }
                 };
-                const go = el('button', {type: 'button', textContent: 'Go to', disabled: !z.mode.ptz});
+                const go = el('button', {
+                    type: 'button',
+                    textContent: 'Go',
+                    title: 'Go to this view',
+                    disabled: !z.mode.ptz
+                });
                 go.onclick = () =>
                     api('POST', `/zones/${z.id}/view/goto`).catch((err) => msg('#zoneMsg', err.message, 'bad'));
-                view.append(el('span', {className: 'mono small', textContent: fmtPtz(z.mode.ptz) + ' '}), set, go);
+                view.title = `view: ${fmtPtz(z.mode.ptz)}`;
+                view.append(set, go);
             } else {
                 view.textContent = '-';
             }
 
-            const del = el('button', {type: 'button', textContent: 'Delete'});
+            const del = el('button', {type: 'button', textContent: '\u2715', title: 'Delete zone', className: 'del'});
             del.onclick = async () => {
                 const extra = z.calibrationId ? ' and its own calibration samples' : '';
                 if (!confirm(`Delete zone "${zoneName(z)}"${extra}?`)) return;
@@ -746,7 +752,7 @@
             for (const c of cells) tr.append(el('td', {textContent: c}));
             const go = el('button', {type: 'button', textContent: 'Go to'});
             go.onclick = () => api('POST', `/calibration/${t.id}/${s.id}/goto`).catch(showError);
-            const del = el('button', {type: 'button', textContent: 'Delete'});
+            const del = el('button', {type: 'button', textContent: '\u2715', title: 'Delete sample', className: 'del'});
             del.onclick = async () => {
                 if (!confirm(`Delete sample ${s.name || ''}?`)) return;
                 await api('DELETE', `/calibration/${t.id}/${s.id}`).catch(showError);

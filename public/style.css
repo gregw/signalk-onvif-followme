@@ -79,13 +79,29 @@ main {
     gap: 16px;
     padding: 16px;
 }
-#zonePanel,
+/* Left: camera view spanning both rows. Right: calibration above zones. Camera settings
+   full width below. One column on narrow screens. */
+#viewPanel {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: start;
+}
+#calPanel,
+#zonePanel {
+    grid-column: 2;
+}
 #cameraPanel {
     grid-column: 1 / -1;
 }
 @media (max-width: 900px) {
     main {
         grid-template-columns: minmax(0, 1fr);
+    }
+    #viewPanel,
+    #calPanel,
+    #zonePanel {
+        grid-column: 1;
+        grid-row: auto;
     }
 }
 .panel {
@@ -357,4 +373,31 @@ input.narrow {
 }
 #cameraDetails[open] summary {
     margin-bottom: 12px;
+}
+/* Compact tables in the right hand column. */
+#samples th,
+#samples td,
+#zones th,
+#zones td {
+    padding: 4px 5px;
+}
+#samples td button,
+#zones td button {
+    padding: 2px 7px;
+    margin-right: 3px;
+}
+button.del {
+    color: var(--bad);
+}
+#zones select {
+    padding: 3px 4px;
+}
+input.narrow {
+    width: 52px;
+}
+.settings label {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
 }

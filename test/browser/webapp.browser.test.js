@@ -134,6 +134,8 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     const vb = await page.locator('#viewPanel').boundingBox();
     const cb = await page.locator('#calPanel').boundingBox();
     assert.ok(cb.x > vb.x + vb.width - 1 && Math.abs(cb.y - vb.y) < 2, 'calibration right of view');
+    const zb = await page.locator('#zonePanel').boundingBox();
+    assert.ok(zb.x > vb.x + vb.width - 1 && zb.y > cb.y + cb.height - 1, 'zones right of view, below calibration');
     await shot(page, 'desktop');
 
     // Go to the sample from elsewhere.
@@ -244,20 +246,24 @@ test('capture without any zone goes to the camera set; fixed zone view; override
         await page.click('#zoneAddBtn');
         const zrow = page.locator('#zones tbody tr', {hasText: 'Close in'});
         await zrow.waitFor();
-        await zrow.locator('text=not set').waitFor();
-        assert.equal(await zrow.locator('button', {hasText: 'Go to'}).isDisabled(), true);
+        await page.waitForFunction(() =>
+            /view: not set/.test(document.querySelector('#zones tbody td.view-cell').title)
+        );
+        assert.equal(await zrow.locator('button[title="Go to this view"]').isDisabled(), true);
         await page.fill('#absForm [name=x]', '-0.3');
         await page.fill('#absForm [name=y]', '0.2');
         await page.fill('#absForm [name=zoom]', '0');
         await page.click('#absForm button[type=submit]');
         await page.locator('#status', {hasText: 'pan -0.300  tilt 0.200'}).waitFor();
         await page.locator('#status', {hasText: 'IDLE'}).waitFor();
-        await zrow.locator('button', {hasText: 'Use current'}).click();
-        await zrow.locator('text=-0.300, 0.200, 0.000').waitFor();
+        await zrow.locator('button[title="Use the current camera view"]').click();
+        await page.waitForFunction(() =>
+            /view: -0\.300, 0\.200, 0\.000/.test(document.querySelector('#zones tbody td.view-cell').title)
+        );
         await page.fill('#absForm [name=x]', '0.4');
         await page.click('#absForm button[type=submit]');
         await page.locator('#status', {hasText: 'pan 0.400'}).waitFor();
-        await zrow.locator('button', {hasText: 'Go to'}).click();
+        await zrow.locator('button[title="Go to this view"]').click();
         await page.locator('#status', {hasText: 'pan -0.300'}).waitFor();
 
         // Priority edits save immediately.
