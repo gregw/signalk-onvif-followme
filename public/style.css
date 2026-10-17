@@ -161,8 +161,7 @@ button[type='submit'] {
     grid-template-columns: repeat(3, 52px);
     gap: 6px;
 }
-.pad button,
-.zoompad button {
+.pad button {
     height: 52px;
     font-size: 20px;
     padding: 0;
@@ -172,11 +171,13 @@ button[type='submit'] {
 .pad .stop {
     color: var(--bad);
 }
-.zoompad {
-    display: grid;
-    grid-template-rows: repeat(2, 52px);
-    gap: 6px;
-    width: 52px;
+.sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.speed input[type='range'] {
+    width: 160px;
 }
 .speed {
     display: flex;

@@ -199,6 +199,7 @@
                 $('#status').textContent =
                     `pan ${fmtN(lastStatus.x)}  tilt ${fmtN(lastStatus.y)}  zoom ${fmtN(lastStatus.zoom)}  ` +
                     (lastStatus.moveStatus || '');
+                syncZoomSlider();
                 setConn('camera connected', 'ok');
             } catch (err) {
                 if (err.status !== 401) {
@@ -256,10 +257,41 @@
         const [x, y] = b.dataset.jog.split(',').map(Number);
         bindHold(b, () => ({x: x * speed(), y: y * speed(), zoom: 0}));
     });
-    document.querySelectorAll('[data-zoom]').forEach((b) => {
-        const z = Number(b.dataset.zoom);
-        bindHold(b, () => ({x: 0, y: 0, zoom: z * speed()}));
+
+    // Zoom slider: absolute zoom in the camera's [0, 1] space, keeping the current pan/tilt.
+    // While dragging, sends at most every 300 ms plus once on release (moves are serialised
+    // per camera in the plugin, so this cannot flood it). It follows the camera's reported
+    // zoom, except for 3 s after the user touches it, so it does not jump back mid-zoom.
+    const zoomSlider = $('#zoom');
+    let zoomUserUntil = 0;
+    let zoomSentAt = 0;
+    let zoomTimer = null;
+    function sendZoom() {
+        clearTimeout(zoomTimer);
+        if (!state.cameraId || !lastStatus || lastStatus.x === null || lastStatus.y === null) return;
+        zoomSentAt = Date.now();
+        const body = {mode: 'absolute', x: lastStatus.x, y: lastStatus.y, zoom: Number(zoomSlider.value)};
+        api('POST', `/camera/${encodeURIComponent(state.cameraId)}/move`, body).catch(showError);
+    }
+    zoomSlider.addEventListener('input', () => {
+        zoomUserUntil = Date.now() + 3000;
+        $('#zoomVal').textContent = Number(zoomSlider.value).toFixed(3);
+        const wait = 300 - (Date.now() - zoomSentAt);
+        clearTimeout(zoomTimer);
+        if (wait <= 0) sendZoom();
+        else zoomTimer = setTimeout(sendZoom, wait);
     });
+    zoomSlider.addEventListener('change', () => {
+        zoomUserUntil = Date.now() + 3000;
+        sendZoom();
+    });
+    function syncZoomSlider() {
+        const z = lastStatus && lastStatus.zoom;
+        zoomSlider.disabled = z === null || z === undefined;
+        if (zoomSlider.disabled || Date.now() < zoomUserUntil) return;
+        zoomSlider.value = z;
+        $('#zoomVal').textContent = Number(z).toFixed(3);
+    }
     $('#stopBtn').addEventListener('click', () => {
         endJog();
         stopCamera();

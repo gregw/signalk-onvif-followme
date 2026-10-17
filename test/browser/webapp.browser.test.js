@@ -152,6 +152,18 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     assert.equal(back.y, -0.0679);
     assert.equal(await page.evaluate(() => document.querySelector('#absForm').checkValidity()), true);
 
+    // Zoom slider follows the camera, and moving it zooms without changing pan/tilt.
+    await page.locator('#zoomVal', {hasText: '0.100'}).waitFor();
+    assert.equal(await page.inputValue('#zoom'), '0.1');
+    const before = await (await fetch(srv.api + '/camera/camera1/status')).json();
+    await page.locator('#zoom').fill('0.6');
+    await page.locator('#status', {hasText: 'zoom 0.600'}).waitFor();
+    await page.locator('#status', {hasText: 'IDLE'}).waitFor();
+    const after = await (await fetch(srv.api + '/camera/camera1/status')).json();
+    assert.equal(after.zoom, 0.6);
+    assert.equal(after.x, before.x);
+    assert.equal(after.y, before.y);
+
     // Reload: state persisted in the plugin.
     await page.reload();
     await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();

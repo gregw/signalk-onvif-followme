@@ -54,14 +54,16 @@
                         <button data-jog="0,-1" aria-label="down">&#8595;</button>
                         <button data-jog="1,-1" aria-label="down right">&#8600;</button>
                     </div>
-                    <div class="zoompad">
-                        <button data-zoom="1" aria-label="zoom in">+</button>
-                        <button data-zoom="-1" aria-label="zoom out">&minus;</button>
+                    <div class="sliders">
+                        <label class="speed">
+                            Speed <input id="speed" type="range" min="0.05" max="1" step="0.05" value="0.3" />
+                            <span id="speedVal" class="mono">0.30</span>
+                        </label>
+                        <label class="speed" title="Absolute zoom: 0 wide, 1 full zoom">
+                            Zoom <input id="zoom" type="range" min="0" max="1" step="0.005" value="0" disabled />
+                            <span id="zoomVal" class="mono">-</span>
+                        </label>
                     </div>
-                    <label class="speed">
-                        Speed <input id="speed" type="range" min="0.05" max="1" step="0.05" value="0.3" />
-                        <span id="speedVal" class="mono">0.30</span>
-                    </label>
                 </div>
                 <form id="absForm" class="row">
                     <label>x <input name="x" type="number" step="any" min="-1" max="1" required /></label>
