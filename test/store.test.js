@@ -219,6 +219,65 @@ test('loading keeps only the newest sample per name', (t) => {
     assert.match(logs.join('\n'), /dropped 1 older same-name/);
 });
 
+test('export then import round trip; import replaces; bad files change nothing', async (t) => {
+    const s = new Store(tmp(t)).load();
+    const c = await s.putCamera('apt', cam);
+    const geometry = (ref, refName) => ({ref, refName, polygon: square});
+    const z1 = await s.createZone({cameraId: 'apt', geometry: geometry('rg-1', 'Harbour')});
+    const z2 = await s.createZone({
+        cameraId: 'apt',
+        geometry: geometry('rg-2', 'Close'),
+        mode: {type: 'fixed'},
+        calibrationOverride: true
+    });
+    await s.setFixedView(z2.id, {x: 0.1, y: 0.2, zoom: 0.3});
+    await s.addSample(c.calibrationId, {name: 'reef', latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
+    await s.addSample(
+        s.zone(z2.id).calibrationId,
+        {name: 'pile', latitude: -27.41, longitude: 153.2},
+        {x: 1, y: 0, zoom: 0}
+    );
+    const file = JSON.parse(JSON.stringify(s.exportData()));
+    assert.equal(file.format, 'signalk-onvif-followme');
+    assert.equal(JSON.stringify(file).includes('secret'), false, 'no camera credentials in the export');
+    assert.equal('cameras' in file, false);
+
+    // A second server with the same camera id, different zones: import replaces them.
+    const s2 = new Store(tmp(t)).load();
+    await s2.putCamera('apt', {...cam, conn: {...cam.conn, password: 'other'}});
+    await s2.createZone({cameraId: 'apt', geometry: geometry('rg-9', 'Gone')});
+    assert.deepEqual(await s2.importData(file), {zones: 2, samples: 2});
+    assert.deepEqual(
+        s2.state.zones.map((z) => z.geometry.refName),
+        ['Harbour', 'Close']
+    );
+    assert.deepEqual(s2.zone(z2.id).mode.ptz, {x: 0.1, y: 0.2, zoom: 0.3});
+    assert.equal(s2.camera('apt').calibrationId, c.calibrationId);
+    assert.equal(s2.camera('apt').conn.password, 'other', 'camera untouched');
+    assert.equal(s2.zoneCalibration(z2.id).samples[0].name, 'pile');
+    assert.equal(s2.zoneCalibration(z1.id).samples[0].name, 'reef');
+
+    // Bad files: rejected, nothing changed.
+    const before = JSON.stringify(s2.state);
+    const bad = (mut, re) => {
+        const f = JSON.parse(JSON.stringify(file));
+        mut(f);
+        return assert.rejects(s2.importData(f), {status: 400, message: re});
+    };
+    await assert.rejects(s2.importData({hello: 1}), {status: 400, message: /export file/});
+    await bad((f) => (f.zones[0].cameraId = 'nope'), /not configured here/);
+    await bad((f) => (f.zones[1].calibrationId = 'missing'), /missing from the file/);
+    await bad((f) => (f.calibrations[0].samples[0].latitude = 'x'), /latitude/);
+    await bad((f) => f.zones.push({...f.zones[0], id: 'dup'}), /two zones for region/);
+    await bad((f) => delete f.zones[0].geometry.refName, /refName/);
+    assert.equal(JSON.stringify(s2.state), before);
+
+    // Empty file: no zones, camera keeps an (empty) calibration set.
+    await s2.importData({...file, zones: [], calibrations: []});
+    assert.deepEqual(s2.state.zones, []);
+    assert.deepEqual(s2.calibration(s2.camera('apt').calibrationId).samples, []);
+});
+
 test('settings: defaults, validation, persisted', async (t) => {
     const dir = tmp(t);
     const s = new Store(dir).load();

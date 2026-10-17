@@ -71,3 +71,11 @@ the end values. Both are flagged in the result. Two samples at distinct bearings
 priority; no hold) and moves the camera as followme would. The webapp offers every
 waypoint and re-reads it from Signal K on each test (and on each capture), so a waypoint
 can be moved in Freeboard and tested again without reloading.
+
+## 2026-10-17: Export and import
+
+From the webapp, not the admin UI plugin config (a schema form: no file transfer, and
+submitting it restarts the plugin and rewrites the options file). The file holds zones and
+calibration sets only: no cameras, credentials or settings. Import replaces all zones and
+calibration after a confirmation naming what is lost; the file is fully validated first
+(zones must name cameras configured here) and applied in one atomic save.

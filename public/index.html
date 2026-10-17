@@ -162,6 +162,14 @@
                         >Hold, s <input id="holdS" type="number" min="0" max="600" step="0.5"
                     /></label>
                     <button type="button" id="settingsBtn">Save hold</button>
+                    <span class="spacer"></span>
+                    <a id="exportBtn" class="button" href="#" download title="Download zones and calibration as JSON"
+                        >Export</a
+                    >
+                    <button type="button" id="importBtn" title="Replace all zones and calibration from a file">
+                        Import
+                    </button>
+                    <input id="importFile" type="file" accept="application/json,.json" hidden />
                 </div>
                 <div id="zoneMsg" class="msg"></div>
             </section>

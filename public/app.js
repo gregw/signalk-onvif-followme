@@ -629,6 +629,51 @@
         }
     });
 
+    // ---- Export / import of zones and calibration (import replaces)
+
+    $('#exportBtn').href = `${API}/export`;
+
+    $('#importBtn').addEventListener('click', () => $('#importFile').click());
+    $('#importFile').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        let data;
+        try {
+            data = JSON.parse(await file.text());
+        } catch {
+            return msg('#zoneMsg', `${file.name} is not JSON.`, 'bad');
+        }
+        const count = (d) =>
+            `${(d.zones || []).length} zones and ` +
+            `${(d.calibrations || []).reduce((n, c) => n + ((c && c.samples) || []).length, 0)} calibration samples`;
+        const now = {zones: state.zones, calibrations: []};
+        try {
+            now.calibrations = (await api('GET', '/export')).calibrations;
+        } catch {
+            // counts only; carry on
+        }
+        if (!confirm(`Replace ${count(now)} with ${count(data)} from ${file.name}?`)) return;
+        try {
+            const r = await api('POST', '/import', data);
+            await reloadState();
+            msg('#zoneMsg', `Imported ${r.zones} zones and ${r.samples} samples from ${file.name}.`, 'ok');
+        } catch (err) {
+            msg('#zoneMsg', err.message, 'bad');
+        }
+    });
+
+    async function reloadState() {
+        const s = await api('GET', '/state');
+        state.cameras = s.cameras;
+        state.zones = s.zones;
+        state.settings = s.settings;
+        state.calId = null;
+        renderCamera();
+        renderZones();
+        renderCalibration();
+    }
+
     // ---- Calibration
     // The set being captured into: the camera's, or a zone's own override set.
 

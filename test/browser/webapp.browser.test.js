@@ -7,6 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const {chromium} = require('playwright');
 const {startDevServer, DEFAULT_RESOURCES} = require('../sim/dev-server');
 
@@ -363,6 +364,33 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         await page.locator('#aimMsg', {hasText: 'zone Harbour'}).waitFor();
         const pan2 = Number(/pan (-?[\d.]+)/.exec(await page.locator('#aimMsg').textContent())[1]);
         assert.ok(pan2 > pan1, `moved towards the 0.4 sample: ${pan1} -> ${pan2}`);
+        // Export downloads zones and calibration; importing a file with no zones empties them
+        // after confirmation; importing the export restores them.
+        const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#exportBtn')]);
+        assert.match(dl.suggestedFilename(), /^onvif-followme-.*\.json$/);
+        const exported = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
+        assert.equal(exported.zones.length, 1);
+        const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'imp-'));
+        const empty = path.join(dir, 'empty.json');
+        fs.writeFileSync(empty, JSON.stringify({...exported, zones: [], calibrations: []}));
+        let dialog = '';
+        page.on('dialog', (d) => {
+            dialog = d.message();
+            d.accept();
+        });
+        await page.setInputFiles('#importFile', empty);
+        await page.locator('#zoneMsg', {hasText: 'Imported 0 zones and 0 samples'}).waitFor();
+        assert.match(dialog, /Replace 1 zones and 2 calibration samples with 0 zones and 0 calibration samples/);
+        await page.locator('#zones', {hasText: 'No zones yet'}).waitFor();
+        await page.locator('#samples', {hasText: 'No samples yet'}).waitFor();
+        const back = path.join(dir, 'back.json');
+        fs.writeFileSync(back, JSON.stringify(exported));
+        await page.setInputFiles('#importFile', back);
+        await page.locator('#zoneMsg', {hasText: 'Imported 1 zones and 2 samples'}).waitFor();
+        await page.locator('#samples tbody tr', {hasText: 'Harbour mouth'}).waitFor();
+        await page.locator('#zones tbody tr', {hasText: 'Harbour'}).waitFor();
+        fs.rmSync(dir, {recursive: true, force: true});
+
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'aim.png'), fullPage: true});
         assert.deepEqual(errors, []);
     } finally {

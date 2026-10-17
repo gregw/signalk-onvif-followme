@@ -241,6 +241,17 @@ test('aim test: zone choice, calibration aim, fixed view, outside, errors', asyn
     await call('DELETE', `/zones/${fixed.body.id}`);
 });
 
+test('export download and import replace over HTTP', async () => {
+    const r = await fetch(srv.api + '/export');
+    assert.match(r.headers.get('content-disposition'), /attachment; filename="onvif-followme-\d{4}-\d{2}-\d{2}\.json"/);
+    const file = await r.json();
+    assert.equal(file.format, 'signalk-onvif-followme');
+    const imp = await call('POST', '/import', file);
+    assert.equal(imp.status, 200);
+    assert.equal(imp.body.zones, file.zones.length);
+    assert.equal((await call('POST', '/import', {format: 'x'})).status, 400);
+});
+
 test('stopped plugin answers 503', async () => {
     srv.plugin.stop();
     try {
