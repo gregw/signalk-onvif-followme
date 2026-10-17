@@ -75,22 +75,17 @@ h2 {
 }
 main {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
     gap: 16px;
     padding: 16px;
 }
-#viewPanel {
-    grid-row: span 2;
-}
-#calPanel {
+#zonePanel,
+#cameraPanel {
     grid-column: 1 / -1;
 }
 @media (max-width: 900px) {
     main {
         grid-template-columns: minmax(0, 1fr);
-    }
-    #viewPanel {
-        grid-row: auto;
     }
 }
 .panel {
@@ -251,9 +246,6 @@ select {
 .hint {
     color: var(--muted);
 }
-#calPanel {
-    overflow-x: auto;
-}
 table {
     width: 100%;
     border-collapse: collapse;
@@ -320,4 +312,49 @@ td button {
     margin-top: 6px;
     font-size: 12px;
     color: var(--muted);
+}
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.stack label {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.small {
+    font-size: 12px;
+}
+.tablewrap {
+    overflow-x: auto;
+}
+td.actions,
+td.view-cell {
+    white-space: nowrap;
+}
+input.narrow {
+    width: 64px;
+}
+#zones tfoot td {
+    border-bottom: none;
+    padding-top: 10px;
+}
+.settings {
+    margin-top: 10px;
+}
+.settings input {
+    width: 80px;
+}
+#cameraPanel {
+    padding: 10px 14px;
+}
+#cameraDetails summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+#cameraDetails[open] summary {
+    margin-bottom: 12px;
 }

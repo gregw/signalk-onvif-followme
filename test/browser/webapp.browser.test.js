@@ -37,7 +37,9 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.goto(srv.url);
     await page.locator('#conn', {hasText: 'no camera'}).waitFor();
 
-    // Camera, with its position taken from a waypoint.
+    // Camera, with its position taken from a waypoint. The settings start open when there is
+    // no camera, and are a one line summary otherwise.
+    assert.equal(await page.locator('#cameraDetails').getAttribute('open'), '');
     const cf = page.locator('#cameraForm');
     await cf.locator('[name=name]').fill('Apartment');
     await cf.locator('[name=hostname]').fill('192.0.2.64');
@@ -51,6 +53,9 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     assert.equal(await cf.locator('[name=password]').getAttribute('placeholder'), '(unchanged)');
     await page.click('#testBtn');
     await page.locator('#cameraMsg', {hasText: 'Connected: Fake honest'}).waitFor();
+    await page
+        .locator('#cameraSummary', {hasText: 'Camera: Apartment  192.0.2.64:80  -27.40000, 153.19000, 30 m'})
+        .waitFor();
 
     // Live view and status.
     await page.waitForFunction(() => {
@@ -92,13 +97,15 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     assert.equal(cont[0][2], 1500);
     assert.equal(calls[calls.length - 1] === 'stop' || calls.includes('stop'), true);
 
-    // Zone from a Freeboard region.
-    const zf = page.locator('#zoneForm');
-    await zf.locator('[name=region]').selectOption({label: 'Harbour'});
-    await page.click('text=Save zone');
-    await page.locator('#zoneMsg', {hasText: 'Saved'}).waitFor();
-    await page.locator('#zoneMsg', {hasText: 'Polygon copied from region "Harbour"'}).waitFor();
-    assert.match(await page.locator('#zoneForm [name=zone] option:checked').textContent(), /^Harbour \(follow, p1\)$/);
+    // Zone from a Freeboard region, added from the table's last row.
+    await page.locator('#zoneAdd [name=region]').selectOption({label: 'Harbour'});
+    await page.click('#zoneAddBtn');
+    await page.locator('#zoneMsg', {hasText: 'Added Harbour'}).waitFor();
+    const zrow = page.locator('#zones tbody tr', {hasText: 'Harbour'});
+    assert.equal(await zrow.locator('[aria-label=mode]').inputValue(), 'followme');
+    assert.equal(await zrow.locator('[aria-label=priority]').inputValue(), '1');
+    // Harbour is used, so the add row no longer offers it.
+    assert.equal(await page.locator('#zoneAdd [name=region] option', {hasText: 'Harbour'}).count(), 0);
 
     // Calibrate: go to a known PTZ, pick a waypoint, capture.
     await page.fill('#absForm [name=x]', '0.25');
@@ -109,7 +116,7 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.locator('#calForm [name=waypoint]').selectOption({label: 'Pile 7'});
     await page.locator('#wpInfo', {hasText: 'bearing 090.0'}).waitFor();
     await page.locator('#wpInfo', {hasText: 'zones: Harbour'}).waitFor();
-    await page.locator('#calTarget', {hasText: 'Calibrating camera "Apartment"'}).waitFor();
+    assert.equal(await page.locator('#calForm [name=set] option:checked').textContent(), 'Camera Apartment');
     await page.click('#captureBtn');
     await page.locator('#calMsg', {hasText: 'Captured Pile 7: pan 0.250 tilt -0.100 zoom 0.200'}).waitFor();
     // Capturing the same waypoint again replaces the first sample.
@@ -121,8 +128,12 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     const cells = await row.locator('td').allTextContents();
     assert.equal(cells[1], '090.0°');
     assert.equal(cells[2], '989 m');
-    assert.equal(cells[4], 'Harbour');
-    assert.equal(cells[5], '0.250');
+    assert.equal(cells[3], '0.250');
+    assert.match(await row.getAttribute('title'), /zones: Harbour/);
+    // Calibration sits to the right of the camera view.
+    const vb = await page.locator('#viewPanel').boundingBox();
+    const cb = await page.locator('#calPanel').boundingBox();
+    assert.ok(cb.x > vb.x + vb.width - 1 && Math.abs(cb.y - vb.y) < 2, 'calibration right of view');
     await shot(page, 'desktop');
 
     // Go to the sample from elsewhere.
@@ -172,6 +183,7 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.reload();
     await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
     assert.equal(await cf.locator('[name=hostname]').inputValue(), '192.0.2.64');
+    assert.equal(await page.locator('#cameraDetails').getAttribute('open'), null, 'collapsed once configured');
     assert.deepEqual(errors, []);
     await ctx.close();
 });
@@ -223,47 +235,54 @@ test('capture without any zone goes to the camera set; fixed zone view; override
         let st = await (await fetch(fresh.api + '/state')).json();
         assert.equal(st.zones.length, 0, 'no zone created');
 
-        // Fixed mode zone: save, jog somewhere, use current view, go back to it.
-        const zf = page.locator('#zoneForm');
-        await zf.locator('[name=mode]').selectOption('fixed');
-        // A new zone needs a region; it is named after it.
-        await page.click('text=Save zone');
+        // A new zone needs a region.
+        await page.click('#zoneAddBtn');
         await page.locator('#zoneMsg', {hasText: 'Choose a region'}).waitFor();
-        await zf.locator('[name=region]').selectOption({label: 'Close in'});
-        assert.equal(await page.locator('#fixedView').isVisible(), true);
-        assert.equal(await page.locator('#viewSetBtn').isDisabled(), true);
-        await page.click('text=Save zone');
-        await page.locator('#zoneMsg', {hasText: 'Saved'}).waitFor();
+        // Fixed mode zone: add, jog somewhere, use current view, go back to it.
+        await page.locator('#zoneAdd [name=region]').selectOption({label: 'Close in'});
+        await page.locator('#zoneAdd [name=mode]').selectOption('fixed');
+        await page.click('#zoneAddBtn');
+        const zrow = page.locator('#zones tbody tr', {hasText: 'Close in'});
+        await zrow.waitFor();
+        await zrow.locator('text=not set').waitFor();
+        assert.equal(await zrow.locator('button', {hasText: 'Go to'}).isDisabled(), true);
         await page.fill('#absForm [name=x]', '-0.3');
         await page.fill('#absForm [name=y]', '0.2');
         await page.fill('#absForm [name=zoom]', '0');
         await page.click('#absForm button[type=submit]');
         await page.locator('#status', {hasText: 'pan -0.300  tilt 0.200'}).waitFor();
         await page.locator('#status', {hasText: 'IDLE'}).waitFor();
-        await page.click('#viewSetBtn');
-        await page.locator('#viewInfo', {hasText: 'pan -0.300 tilt 0.200 zoom 0.000'}).waitFor();
+        await zrow.locator('button', {hasText: 'Use current'}).click();
+        await zrow.locator('text=-0.300, 0.200, 0.000').waitFor();
         await page.fill('#absForm [name=x]', '0.4');
         await page.click('#absForm button[type=submit]');
         await page.locator('#status', {hasText: 'pan 0.400'}).waitFor();
-        await page.click('#viewGotoBtn');
+        await zrow.locator('button', {hasText: 'Go to'}).click();
         await page.locator('#status', {hasText: 'pan -0.300'}).waitFor();
 
-        // Override: the calibration panel switches to the zone's own (empty) set.
-        await zf.locator('[name=override]').check();
-        await page.click('text=Save zone');
-        await page.locator('#calTarget', {hasText: 'zone "Close in" (override)'}).waitFor();
-        await page.locator('#samples', {hasText: 'No samples yet'}).waitFor();
-        await zf.locator('[name=override]').uncheck();
-        await page.click('text=Save zone');
-        await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
+        // Priority edits save immediately.
+        await zrow.locator('[aria-label=priority]').fill('5');
+        await zrow.locator('[aria-label=priority]').press('Tab');
+        await page.locator('#zoneMsg', {hasText: 'Saved Close in'}).waitFor();
 
-        // Switching settings.
-        await zf.locator('[name=holdS]').fill('3');
+        // Own calibration: the zone's set appears in the calibration set list, empty.
+        await zrow.locator('[aria-label="own calibration"]').check();
+        await page.locator('#calForm [name=set] option', {hasText: 'Zone Close in (own)'}).waitFor({state: 'attached'});
+        await page.locator('#calForm [name=set]').selectOption({label: 'Zone Close in (own)'});
+        await page.locator('#samples', {hasText: 'No samples yet'}).waitFor();
+        page.once('dialog', (d) => d.accept());
+        await zrow.locator('[aria-label="own calibration"]').uncheck();
+        await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
+        assert.equal(await page.locator('#calForm [name=set] option').count(), 1);
+
+        // Hold setting.
+        await page.fill('#holdS', '3');
         await page.click('#settingsBtn');
-        await page.locator('#zoneMsg', {hasText: 'switching settings saved'}).waitFor();
+        await page.locator('#zoneMsg', {hasText: 'Hold saved'}).waitFor();
         st = await (await fetch(fresh.api + '/state')).json();
         assert.deepEqual(st.settings, {holdS: 3});
         assert.equal(st.zones[0].mode.type, 'fixed');
+        assert.equal(st.zones[0].priority, 5);
         assert.deepEqual(st.zones[0].mode.ptz, {x: -0.3, y: 0.2, zoom: 0});
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'fixed.png'), fullPage: true});
         assert.deepEqual(errors, []);
