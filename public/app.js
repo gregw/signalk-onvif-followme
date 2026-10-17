@@ -9,7 +9,7 @@
  *
  * Wire units are SI (radians, metres); degrees appear only here, at the display edge.
  * The live view is a component with start/stop/setCamera, so a stream view can replace
- * the 1 fps snapshot view without touching capture logic (brief: deferred decision 1).
+ * the 4 fps snapshot view without touching capture logic (brief: deferred decision 1).
  */
 
 (function () {
@@ -106,20 +106,28 @@
 
     // ---- Live view (swappable)
 
-    /** 1 fps snapshot view: polls the plugin's snapshot proxy, one request at a time. */
-    function snapshotView(container, {periodMs = 1000} = {}) {
+    /**
+     * 4 fps snapshot view: polls the plugin's snapshot proxy, one request at a time.
+     * The period runs from the start of each request, so a slow camera lowers the rate
+     * rather than stacking requests. 1 frame per 5 s while the tab is hidden.
+     */
+    function snapshotView(container, {periodMs = 250} = {}) {
         const img = new Image();
         img.alt = 'camera view';
         let cameraId = null;
         let running = false;
         let timer = null;
+        let startedAt = 0;
         const next = () => {
             clearTimeout(timer);
-            if (running && cameraId) timer = setTimeout(load, document.hidden ? 5000 : periodMs);
+            if (!running || !cameraId) return;
+            const wait = document.hidden ? 5000 : Math.max(0, periodMs - (Date.now() - startedAt));
+            timer = setTimeout(load, wait);
         };
         function load() {
             if (!running || !cameraId) return;
-            img.src = `${API}/camera/${encodeURIComponent(cameraId)}/snapshot?t=${Date.now()}`;
+            startedAt = Date.now();
+            img.src = `${API}/camera/${encodeURIComponent(cameraId)}/snapshot?t=${startedAt}`;
         }
         img.onload = () => {
             container.classList.remove('stale');

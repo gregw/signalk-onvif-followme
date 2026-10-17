@@ -60,6 +60,13 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.locator('#status', {hasText: 'pan 0.'}).waitFor();
     await page.locator('#conn', {hasText: 'camera connected'}).waitFor();
 
+    // About 4 snapshots a second, never more.
+    const snaps = () => lastCam().calls.filter((c) => c[0] === 'fetchSnapshot').length;
+    const n0 = snaps();
+    await page.waitForTimeout(2000);
+    const rate = (snaps() - n0) / 2;
+    assert.ok(rate >= 3 && rate <= 4.5, `snapshot rate ${rate}/s`);
+
     // Hold right: continuous move with a camera-side timeout, then Stop on release.
     const right = page.locator('[data-jog="1,0"]');
     await right.hover();
