@@ -18,32 +18,32 @@ const B = {id: 'B', priority: 1, geometry: {polygon: square(800, 1800)}};
 const NOGEO = {id: 'N', priority: 0, geometry: null};
 const ZONES = [A, B, NOGEO];
 
-function run(steps, {marginM = 10, holdMs = 5000} = {}) {
+function run(steps, {holdMs = 5000} = {}) {
     let s = initialState();
     const out = [];
     for (const [t, x] of steps) {
-        s = selectZone(s, {position: at(x), zones: ZONES, marginM, holdMs, now: t * 1000});
+        s = selectZone(s, {position: at(x), zones: ZONES, holdMs, now: t * 1000});
         out.push(s.activeId);
     }
     return out;
 }
 
-test('enter needs margin inside and the hold time', () => {
-    // At x=-5 (outside), x=5 (inside by 5 m, less than the 10 m margin), then x=50 for 5 s.
+test('enter needs the hold time', () => {
+    // Outside, then inside for 5 s.
     assert.deepEqual(
         run([
             [0, -5],
             [1, 5],
-            [2, 50],
-            [4, 50],
-            [7, 50]
+            [3, 50],
+            [6, 50]
         ]),
-        [null, null, null, null, 'A']
+        [null, null, null, 'A']
     );
 });
 
 test('jitter across an edge never switches', () => {
-    // Active in A, then oscillate +-8 m about A's west edge (inside the 10 m band).
+    // Active in A, then oscillate +-8 m about A's outer (west) edge every second: each
+    // excursion restarts the hold, so it never releases.
     const steps = [
         [0, 100],
         [5, 100]
@@ -56,7 +56,7 @@ test('jitter across an edge never switches', () => {
     );
 });
 
-test('leaving needs margin outside held for the hold time, then releases', () => {
+test('leaving needs the hold time, then releases', () => {
     const out = run([
         [0, 100],
         [5, 100],
@@ -97,15 +97,15 @@ test('entering an overlap from outside both takes the lowest priority number', (
     // From the north, straight into the overlap strip.
     let s = initialState();
     const p = (y) => ({latitude: O.latitude + y / k.lat, longitude: O.longitude + 900 / k.lon});
-    s = selectZone(s, {position: p(600), zones: ZONES, marginM: 10, holdMs: 0, now: 0});
+    s = selectZone(s, {position: p(600), zones: ZONES, holdMs: 0, now: 0});
     assert.equal(s.activeId, null);
-    s = selectZone(s, {position: p(400), zones: ZONES, marginM: 10, holdMs: 0, now: 1000});
+    s = selectZone(s, {position: p(400), zones: ZONES, holdMs: 0, now: 1000});
     assert.equal(s.activeId, 'B');
     assert.equal(s.changed, true);
 });
 
 test('active zone deleted: re-evaluated from scratch; zones without geometry never match', () => {
     let s = {activeId: 'gone', pending: null};
-    s = selectZone(s, {position: at(500), zones: ZONES, marginM: 10, holdMs: 0, now: 0});
+    s = selectZone(s, {position: at(500), zones: ZONES, holdMs: 0, now: 0});
     assert.equal(s.activeId, 'A');
 });

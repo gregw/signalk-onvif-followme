@@ -78,7 +78,7 @@ test('zone, capture into the camera set, derived bearing/range, goto, geometry q
     const zoneId = z.body.id;
     const st = await call('GET', '/state');
     const calId = st.body.cameras.find((c) => c.id === 'apt').calibrationId;
-    assert.deepEqual(st.body.settings, {edgeMarginM: 10, holdS: 5});
+    assert.deepEqual(st.body.settings, {holdS: 5});
 
     await call('POST', '/camera/apt/move', {mode: 'absolute', x: 0.25, y: -0.1, zoom: 0.2});
     await settle();
@@ -135,7 +135,7 @@ test('fixed mode zone: capture the current view and go back to it', async () => 
     assert.equal((await call('POST', `/zones/${z.body.id}/view/goto`)).status, 200);
     const fake = srv.cameras[srv.cameras.length - 1].adapter;
     assert.deepEqual(fake.calls.filter((c) => c[0] === 'absoluteMove').pop()[1], {x: -0.2, y: 0.1, zoom: 0});
-    assert.equal((await call('PUT', '/settings', {edgeMarginM: 20})).body.edgeMarginM, 20);
+    assert.equal((await call('PUT', '/settings', {holdS: 3})).body.holdS, 3);
     assert.equal((await call('PUT', '/settings', {holdS: 'x'})).status, 400);
     await call('DELETE', `/zones/${z.body.id}`);
 });

@@ -72,43 +72,9 @@ test('pointInPolygon: ring, Polygon with hole, MultiPolygon', () => {
     assert.equal(g.pointInPolygon(at(153.05, -27.05), null), false);
 });
 
-test('signedDistanceToEdge: inside positive, outside negative, agrees with Vincenty', () => {
-    const sq = {
-        type: 'Polygon',
-        coordinates: [
-            [
-                [153.0, -27.39],
-                [153.02, -27.39],
-                [153.02, -27.41],
-                [153.0, -27.41],
-                [153.0, -27.39]
-            ]
-        ]
-    };
-    const centre = {latitude: -27.4, longitude: 153.01};
-    const east = g.inverse(centre, {latitude: -27.4, longitude: 153.02}).range; // 989.0 m
-    near(g.signedDistanceToEdge(centre, sq), east, 0.5, 'centre to east edge');
-    const outside = {latitude: -27.4, longitude: 153.03};
-    near(
-        g.signedDistanceToEdge(outside, sq),
-        -g.inverse(outside, {latitude: -27.4, longitude: 153.02}).range,
-        0.5,
-        'outside'
-    );
-    // Hole: just inside the hole is outside the zone.
-    const withHole = {
-        type: 'Polygon',
-        coordinates: [
-            sq.coordinates[0],
-            [
-                [153.005, -27.395],
-                [153.015, -27.395],
-                [153.015, -27.405],
-                [153.005, -27.405],
-                [153.005, -27.395]
-            ]
-        ]
-    };
-    assert.ok(g.signedDistanceToEdge(centre, withHole) < 0);
-    assert.equal(g.signedDistanceToEdge(centre, null), null);
+test('metresPerDegree matches Vincenty over 0.01 degree', () => {
+    const k = g.metresPerDegree(-27.4);
+    const p = {latitude: -27.4, longitude: 153.0};
+    near(k.lon * 0.01, g.inverse(p, {latitude: -27.4, longitude: 153.01}).range, 0.01, 'lon');
+    near(k.lat * 0.01, g.inverse(p, {latitude: -27.39, longitude: 153.0}).range, 0.01, 'lat');
 });

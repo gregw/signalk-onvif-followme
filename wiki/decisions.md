@@ -28,14 +28,17 @@ current position in the webapp.
 
 Resolves the brief's deferred decision 2. Per camera (lib/engine/zones.js):
 
-- Sticky: the active zone stays active while the target is not clearly outside it, even
-  if it is also inside another zone.
+- Sticky: the active zone stays active while the target is inside it, even if it is also
+  inside another zone. Drawing neighbouring zones to overlap is the zone to zone hysteresis.
 - Priority: entering from outside, or after leaving the active zone, the matching zone with
   the lowest `priority` number wins (ties by id).
-- Edge margin: enter only when inside by at least `edgeMarginM`; leave only when outside by
-  at least `edgeMarginM` (default 10 m). Distance is the signed distance to the polygon edge.
-- Hold: any change, including release to no zone, only after the same outcome has held for
-  `holdS` (default 5 s). A flip-flop restarts the hold.
+- Hold: any change, including entry from and release to no zone, only after the same outcome
+  has held for `holdS` (default 5 s). A flip-flop restarts the hold. This covers what
+  overlaps cannot: jitter at an outer edge (zone to no zone) and single bad fixes.
 - Zones without a polygon never match.
 
-`edgeMarginM` and `holdS` are global settings, editable in the webapp.
+`holdS` is a global setting, editable in the webapp.
+
+An edge margin (enter only when inside by N metres, leave only when outside by N) was
+implemented and dropped the same day: overlaps already give zone to zone hysteresis, and the
+hold covers the outer edge and bad fixes.

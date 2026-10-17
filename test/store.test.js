@@ -124,10 +124,19 @@ test('zones: geometry snapshot, priority, modes, calibration override, cascade d
 test('settings: defaults, validation, persisted', async (t) => {
     const dir = tmp(t);
     const s = new Store(dir).load();
-    assert.deepEqual(s.state.settings, {edgeMarginM: 10, holdS: 5});
-    await assert.rejects(s.putSettings({edgeMarginM: -1}), {status: 400});
+    assert.deepEqual(s.state.settings, {holdS: 5});
+    await assert.rejects(s.putSettings({holdS: -1}), {status: 400});
     await s.putSettings({holdS: 3});
-    assert.deepEqual(new Store(dir).load().state.settings, {edgeMarginM: 10, holdS: 3});
+    assert.deepEqual(new Store(dir).load().state.settings, {holdS: 3});
+});
+
+test('a v2 file with the dropped edgeMarginM setting loads without it', (t) => {
+    const dir = tmp(t);
+    fs.writeFileSync(
+        path.join(dir, 'state.json'),
+        JSON.stringify({version: 2, settings: {edgeMarginM: 10, holdS: 7}, cameras: [], zones: [], calibrations: []})
+    );
+    assert.deepEqual(new Store(dir).load().state.settings, {holdS: 7});
 });
 
 test('migrates a version 1 state file: zone samples move to the camera set', async (t) => {

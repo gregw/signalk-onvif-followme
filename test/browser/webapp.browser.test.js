@@ -215,11 +215,11 @@ test('capture without any zone goes to the camera set; fixed zone view; override
         await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
 
         // Switching settings.
-        await zf.locator('[name=edgeMarginM]').fill('25');
+        await zf.locator('[name=holdS]').fill('3');
         await page.click('#settingsBtn');
         await page.locator('#zoneMsg', {hasText: 'switching settings saved'}).waitFor();
         st = await (await fetch(fresh.api + '/state')).json();
-        assert.deepEqual(st.settings, {edgeMarginM: 25, holdS: 5});
+        assert.deepEqual(st.settings, {holdS: 3});
         assert.equal(st.zones[0].mode.type, 'fixed');
         assert.deepEqual(st.zones[0].mode.ptz, {x: -0.3, y: 0.2, zoom: 0});
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'fixed.png'), fullPage: true});

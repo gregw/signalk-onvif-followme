@@ -26,7 +26,7 @@
     const state = {
         cameras: [],
         zones: [],
-        settings: {edgeMarginM: 10, holdS: 5},
+        settings: {holdS: 5},
         waypoints: {},
         regions: {},
         cameraId: null,
@@ -426,7 +426,6 @@
                   : ''
         );
         const st = state.settings;
-        f.edgeMarginM.value = st.edgeMarginM;
         f.holdS.value = st.holdS;
     }
 
@@ -517,7 +516,6 @@
         const f = $('#zoneForm');
         try {
             state.settings = await api('PUT', '/settings', {
-                edgeMarginM: Number(f.edgeMarginM.value),
                 holdS: Number(f.holdS.value)
             });
             msg('#zoneMsg', 'Zone switching settings saved.', 'ok');
