@@ -1,0 +1,27 @@
+{
+    "name": "signalk-ptz-followme",
+    "version": "0.0.1",
+    "description": "Signal K plugin that aims a fixed ONVIF PTZ camera at a Signal K position while it is inside a visibility zone.",
+    "main": "index.js",
+    "keywords": [
+        "signalk-node-server-plugin",
+        "signalk-category-utility"
+    ],
+    "signalk-plugin-enabled-by-default": false,
+    "engines": {
+        "node": ">=22"
+    },
+    "author": "gregw@mortbay.com",
+    "license": "Apache-2.0",
+    "scripts": {
+        "test": "node --test test/*.test.js",
+        "probe": "node tools/ptz-probe.js",
+        "format": "npx -y prettier@3.3.3 --write \"lib/**/*.js\" \"tools/**/*.js\" \"test/**/*.js\"",
+        "test:node22": "npx -y -p node@22.22.2 node --test test/*.test.js"
+    },
+    "dependencies": {
+        "onvif": "0.8.3",
+        "onvif-rc": "npm:onvif@1.0.0-rc.3",
+        "xml2js": "^0.6.2"
+    }
+}
