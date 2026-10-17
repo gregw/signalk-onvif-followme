@@ -264,3 +264,12 @@ test('stopped plugin answers 503', async () => {
         srv.plugin.start({});
     }
 });
+
+test('follow on survives a plugin restart (server stop and start)', async () => {
+    assert.equal((await call('PUT', '/settings', {followEnabled: true})).status, 200);
+    srv.plugin.stop();
+    srv.plugin.start({}); // reloads state.json from the data dir, as a server start does
+    const f = await call('GET', '/follow');
+    assert.equal(f.body.enabled, true);
+    await call('PUT', '/settings', {followEnabled: false});
+});
