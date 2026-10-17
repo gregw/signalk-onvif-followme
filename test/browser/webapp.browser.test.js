@@ -145,3 +145,33 @@ test('not logged in shows the login banner', async () => {
     await page.locator('#conn', {hasText: 'not authorised'}).waitFor();
     await ctx.close();
 });
+
+test('capture with no zone yet creates one, without a region', async () => {
+    const fresh = await startDevServer();
+    const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
+    try {
+        const page = await ctx.newPage();
+        await page.goto(fresh.url);
+        await page.locator('#conn', {hasText: 'no camera'}).waitFor();
+        assert.equal(await page.locator('#captureBtn').isDisabled(), true);
+        const cf = page.locator('#cameraForm');
+        await cf.locator('[name=hostname]').fill('192.0.2.64');
+        await cf.locator('[name=poseWaypoint]').selectOption({label: 'Camera'});
+        await page.click('text=Save camera');
+        await page.locator('#cameraMsg', {hasText: 'Saved'}).waitFor();
+        assert.equal(await page.locator('#captureBtn').isDisabled(), false);
+        await page.locator('#samples', {hasText: 'first capture also creates a zone'}).waitFor();
+
+        await page.locator('#calForm [name=waypoint]').selectOption({label: 'Pile 7'});
+        await page.click('#captureBtn');
+        await page.locator('#calMsg', {hasText: 'Captured Pile 7'}).waitFor();
+        await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
+        await page.locator('#zoneMsg', {hasText: 'No region assigned'}).waitFor();
+        const st = await (await fetch(fresh.api + '/state')).json();
+        assert.equal(st.zones.length, 1);
+        assert.equal(st.zones[0].geometry, null);
+    } finally {
+        await ctx.close();
+        await fresh.close();
+    }
+});

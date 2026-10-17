@@ -395,6 +395,17 @@
         renderCalibration();
     });
 
+    async function saveZone(body) {
+        const z = state.zoneId ? await api('PUT', `/zones/${state.zoneId}`, body) : await api('POST', '/zones', body);
+        const i = state.zones.findIndex((x) => x.id === z.id);
+        if (i >= 0) state.zones[i] = z;
+        else state.zones.push(z);
+        state.zoneId = z.id;
+        renderZones();
+        renderCalibration();
+        return z;
+    }
+
     $('#zoneForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const f = e.target;
@@ -411,15 +422,7 @@
                   : null
         };
         try {
-            const z = state.zoneId
-                ? await api('PUT', `/zones/${state.zoneId}`, body)
-                : await api('POST', '/zones', body);
-            const i = state.zones.findIndex((x) => x.id === z.id);
-            if (i >= 0) state.zones[i] = z;
-            else state.zones.push(z);
-            state.zoneId = z.id;
-            renderZones();
-            renderCalibration();
+            await saveZone(body);
             msg('#zoneMsg', 'Saved. ' + $('#zoneMsg').textContent, 'ok');
         } catch (err) {
             msg('#zoneMsg', err.message, 'bad');
@@ -484,9 +487,14 @@
         const f = e.target;
         const id = f.waypoint.value;
         const p = wpPos(state.waypoints[id]);
-        if (!state.zoneId) return msg('#calMsg', 'Save a zone first.', 'bad');
+        if (!state.cameraId) return msg('#calMsg', 'Save a camera first.', 'bad');
         if (!p) return msg('#calMsg', 'Choose a waypoint.', 'bad');
         try {
+            // Samples belong to a zone. If there is none yet, create one without a region;
+            // the region can be assigned later in the Zone panel.
+            if (!state.zoneId) {
+                await saveZone({name: $('#zoneForm').name.value || 'Zone 1', cameraId: state.cameraId, geometry: null});
+            }
             const s = await api('POST', `/calibration/${state.zoneId}`, {
                 waypointId: id,
                 name: state.waypoints[id].name,
@@ -507,9 +515,11 @@
 
     async function renderCalibration() {
         const tbody = $('#samples tbody');
-        $('#captureBtn').disabled = !state.zoneId;
+        $('#captureBtn').disabled = !state.cameraId;
         if (!state.zoneId) {
-            tbody.innerHTML = '<tr><td colspan="9" class="hint">No zone yet.</td></tr>';
+            tbody.innerHTML = state.cameraId
+                ? '<tr><td colspan="9" class="hint">No samples yet. The first capture also creates a zone.</td></tr>'
+                : '<tr><td colspan="9" class="hint">Save a camera first.</td></tr>';
             return;
         }
         let cal;
