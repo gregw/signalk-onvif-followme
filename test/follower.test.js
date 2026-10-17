@@ -11,6 +11,7 @@ const {fakeCamera} = require('./sim/fake-camera');
 const g = require('../lib/engine/geometry');
 const {wrapPan} = require('../lib/engine/calibration');
 
+const TICK = 1000;
 const CAM = {latitude: -27.35, longitude: 153.25, height: 30};
 const rad = (d) => (d * Math.PI) / 180;
 const deg = (r) => (r * 180) / Math.PI;
@@ -87,7 +88,7 @@ async function setup(t) {
             }
         }
     };
-    const follower = new Follower({app, store, cameras, now: clock, tickMs: 250});
+    const follower = new Follower({app, store, cameras, now: clock, tickMs: TICK});
     follower.start();
     t.after(() => follower.stop());
     const fix = (p, cog = null, sog = null) => {
@@ -96,10 +97,10 @@ async function setup(t) {
         if (sog !== null) values.push({path: 'navigation.speedOverGround', value: sog});
         deliver({context: 'vessels.urn:x', updates: [{values}]});
     };
-    // Advance the clock in 250 ms ticks, awaiting each tick.
+    // Advance the clock a tick at a time, awaiting each tick.
     const run = async (ms, each) => {
-        for (let t0 = 0; t0 < ms; t0 += 250) {
-            now += 250;
+        for (let t0 = 0; t0 < ms; t0 += TICK) {
+            now += TICK;
             if (each) each(now);
             await follower.tick();
         }
@@ -123,7 +124,7 @@ test('follows a moving boat: hold on entry, at most one move per interval, aims 
     // Boat at 5 m/s along the 1000 m arc from 170 to 240 degrees (1000 m arc ~ 17.5 m per degree).
     let b = 170;
     const step = () => {
-        b += 5 / 17.45 / 4; // per 250 ms
+        b += ((5 / 17.45) * TICK) / 1000; // per tick
         fix(at(b, 1000));
     };
     await run(4500, step);
@@ -141,8 +142,8 @@ test('follows a moving boat: hold on entry, at most one move per interval, aims 
     await run(30000, step);
     const ms = moves();
     // 5 m/s at 1000 m is 0.29 deg/s, 0.0016 pan units/s: the 0.003 deadband is crossed about
-    // every 1.9 s, so the deadband (not the 1 s interval) sets the rate here, in ~0.5 deg steps.
-    assert.ok(ms.length >= 13 && ms.length <= 17, `one move per ~1.9 s: ${ms.length}`);
+    // every 1.9 s, so at a 1 s tick the camera moves every 2 s, in ~0.6 deg steps.
+    assert.ok(ms.length >= 13 && ms.length <= 17, `one move per 2 s: ${ms.length}`);
     for (let i = 1; i < ms.length; i++) {
         const step = Math.abs(ms[i].x - ms[i - 1].x);
         assert.ok(step > 0.003 && step < 0.005, `pan step ${step}`);
@@ -155,13 +156,25 @@ test('follows a moving boat: hold on entry, at most one move per interval, aims 
     assert.equal(new Set(ms.map((m) => m.zoom)).size, 1);
 });
 
+test('a timer firing slightly early does not skip a 1 s move', async (t) => {
+    const {store, fix, moves, follower, setNow, clock} = await setup(t);
+    await store.putSettings({followEnabled: true, leadS: 0, holdS: 0, minIntervalS: 1});
+    // A fast pan (2 deg per tick, well past the deadband) on ticks 999 ms apart.
+    for (let i = 0; i < 6; i++) {
+        setNow(clock() + 999);
+        fix(at(180 + 2 * i, 1000));
+        await follower.tick();
+    }
+    assert.equal(moves().length, 6);
+});
+
 test('lead: aims ahead along COG/SOG', async (t) => {
     const {store, fix, run, moves} = await setup(t);
     await store.putSettings({followEnabled: true, leadS: 4, holdS: 0});
     const p = at(200, 1000);
     // Heading 290 true at 5 m/s: 20 m ahead.
     fix(p, rad(290), 5);
-    await run(250);
+    await run(TICK);
     const ahead = g.metresPerDegree(p.latitude);
     const q = {
         latitude: p.latitude + (20 * Math.cos(rad(290))) / ahead.lat,
