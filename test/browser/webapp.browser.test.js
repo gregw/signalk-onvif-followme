@@ -476,11 +476,24 @@ test('follow: switch on, boat enters a zone, camera aims, manual jog pauses, res
 
         await page.goto(fresh.url);
         await page.locator('#followStatus', {hasText: 'Follow: off'}).waitFor();
-        await page.check('#followToggle');
-        await page.locator('#followStatus', {hasText: 'no position yet'}).waitFor();
 
-        // Simulated boat in the zone.
+        // Follow live: explains why nothing happens, and starts following.
+        await page.click('#liveBtn');
+        await page.locator('#liveHeadline', {hasText: 'Following is off. Press Start following.'}).waitFor();
+        await page.click('#liveToggle');
+        await page.locator('#liveHeadline', {hasText: 'No position received'}).waitFor();
+        assert.equal(await page.isChecked('#followToggle'), true);
+        fresh.boat(-27.3, 153.0, (270 * Math.PI) / 180, 3);
+        await page.locator('#liveHeadline', {hasText: 'outside all zones'}).waitFor();
+        await page.locator('#lvCogSog', {hasText: '270.0\u00b0 / 5.8 kn'}).waitFor();
         fresh.boat(-27.404, 153.205);
+        await page.locator('#liveHeadline', {hasText: 'In Harbour: following the boat'}).waitFor();
+        await page.locator('#lvIn', {hasText: 'Harbour (p1)'}).waitFor();
+        await page.locator('#lvZone', {hasText: 'Harbour (follow, p1)'}).waitFor();
+        await page.locator('#lvLast', {hasText: 's ago'}).waitFor();
+        if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'live.png')});
+        await page.click('#liveClose');
+
         await page.locator('#followStatus', {hasText: 'following Harbour (follow)'}).waitFor();
         await page.waitForFunction(() => document.querySelector('#zones tbody tr.active'));
         const cam = () => fresh.cameras[fresh.cameras.length - 1].adapter;

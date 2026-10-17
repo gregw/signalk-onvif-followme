@@ -15,7 +15,77 @@
             </label>
             <span id="followStatus" class="mono small"></span>
             <button type="button" id="resumeBtn" hidden>Resume</button>
+            <button type="button" id="liveBtn">Follow live</button>
         </header>
+
+        <dialog id="liveDlg" aria-labelledby="liveTitle">
+            <div class="dlg-head">
+                <h2 id="liveTitle">Follow live</h2>
+                <button type="button" id="liveClose" aria-label="close">&#10005;</button>
+            </div>
+            <div id="liveHeadline" class="headline"></div>
+            <div class="row">
+                <button type="button" id="liveToggle"></button>
+                <button type="button" id="liveResume" hidden>Resume now</button>
+            </div>
+            <table class="kv">
+                <tbody>
+                    <tr>
+                        <th colspan="2" class="sect">Boat</th>
+                    </tr>
+                    <tr>
+                        <th>Position</th>
+                        <td id="lvPos"></td>
+                    </tr>
+                    <tr>
+                        <th>Fix age</th>
+                        <td id="lvAge"></td>
+                    </tr>
+                    <tr>
+                        <th>COG / SOG</th>
+                        <td id="lvCogSog"></td>
+                    </tr>
+                    <tr>
+                        <th>From camera</th>
+                        <td id="lvBrg"></td>
+                    </tr>
+                    <tr>
+                        <th>Inside regions</th>
+                        <td id="lvIn"></td>
+                    </tr>
+                    <tr>
+                        <th colspan="2" class="sect">Zone</th>
+                    </tr>
+                    <tr>
+                        <th>Active</th>
+                        <td id="lvZone"></td>
+                    </tr>
+                    <tr>
+                        <th>Changing</th>
+                        <td id="lvPending"></td>
+                    </tr>
+                    <tr>
+                        <th colspan="2" class="sect">Camera</th>
+                    </tr>
+                    <tr>
+                        <th>Loop</th>
+                        <td id="lvReason"></td>
+                    </tr>
+                    <tr>
+                        <th>Wanted</th>
+                        <td id="lvWant"></td>
+                    </tr>
+                    <tr>
+                        <th>Last sent</th>
+                        <td id="lvLast"></td>
+                    </tr>
+                    <tr>
+                        <th>Camera at</th>
+                        <td id="lvCam"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </dialog>
 
         <div id="login" class="banner" hidden>
             Not authorised. <a href="/admin/#/login">Log in to Signal K as an admin user</a>, then reload this page.

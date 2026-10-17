@@ -474,3 +474,59 @@ header {
 #tuningDetails[open] summary {
     margin-bottom: 12px;
 }
+dialog#liveDlg {
+    width: min(560px, calc(100vw - 32px));
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--fg);
+    padding: 16px;
+}
+dialog#liveDlg::backdrop {
+    background: rgba(0, 0, 0, 0.35);
+}
+.dlg-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.dlg-head h2 {
+    margin: 0;
+}
+.headline {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--bg);
+    font-weight: 600;
+}
+.headline.ok {
+    color: var(--ok);
+}
+.headline.bad {
+    color: var(--bad);
+}
+button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+table.kv {
+    margin-top: 12px;
+}
+table.kv th {
+    width: 120px;
+    color: var(--muted);
+    font-weight: normal;
+    vertical-align: top;
+}
+table.kv th.sect {
+    color: var(--fg);
+    font-weight: 600;
+    padding-top: 12px;
+}
+table.kv td {
+    white-space: normal;
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+}

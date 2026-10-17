@@ -726,10 +726,7 @@
                     text = `following ${c.zone.name} (${c.zone.mode === 'fixed' ? 'fixed' : 'follow'}): ${c.reason}, ${c.sent} moves${lastMove}`;
                 } else text = c.reason;
                 if (c.pausedS > 0) text = `paused (manual control) ${Math.ceil(c.pausedS)} s`;
-                if (c.pending) {
-                    const to = c.pending.id ? (state.zones.find((z) => z.id === c.pending.id) || {}).geometry : null;
-                    text += `; changing to ${to ? to.refName : 'none'}`;
-                }
+                if (c.pending) text += `; changing to ${c.pending.to ? c.pending.to.name : 'none'}`;
             }
             $('#followStatus').textContent = `Follow: ${text}`;
             $('#resumeBtn').hidden = !(c && c.pausedS > 0);
@@ -742,6 +739,104 @@
         }
         followTimer = setTimeout(pollFollow, document.hidden ? 5000 : 1000);
     }
+
+    // ---- Follow live pop-up: the loop's view of the boat, zone and camera, twice a second
+
+    const knots = (ms) => ms * 1.943844;
+    let liveTimer = null;
+
+    /** Plain words for what the loop is doing (or why not). */
+    function explain(f, c) {
+        if (!f.enabled) return ['bad', 'Following is off. Press Start following.'];
+        if (!c) return ['bad', 'No camera configured.'];
+        if (c.pausedS > 0) return ['bad', `Paused by manual control for ${Math.ceil(c.pausedS)} s more.`];
+        const r = c.reason;
+        if (r === 'no position yet') return ['bad', 'No position received for this vessel (navigation.position).'];
+        if (r === 'position stale') return ['bad', `Position is stale: nothing for over ${f.staleS} s.`];
+        if (r === 'outside (hold)') {
+            const to = c.pending && c.pending.to ? c.pending.to.name : 'a zone';
+            return ['', `Entering ${to}: waiting out the ${f.holdS} s hold.`];
+        }
+        if (r === 'outside all zones') return ['', 'Boat is outside all zones: camera released to its own scan.'];
+        if (r.startsWith('cannot aim')) return ['bad', r.replace('cannot aim: ', 'Cannot aim: ') + '.'];
+        if (r.startsWith('error')) return ['bad', `Camera ${r}.`];
+        if (c.zone) {
+            const what = c.zone.mode === 'fixed' ? 'holding the fixed view' : 'following the boat';
+            const why =
+                {
+                    move: 'moving',
+                    deadband: 'within deadband',
+                    interval: 'waiting min interval',
+                    moving: 'waiting for idle',
+                    first: 'first move'
+                }[r] || r;
+            return ['ok', `In ${c.zone.name}: ${what} (${why}).`];
+        }
+        return ['', r];
+    }
+
+    function renderLive(f) {
+        const c = state.cameraId ? f.cameras[state.cameraId] : null;
+        const [cls, text] = explain(f, c);
+        const h = $('#liveHeadline');
+        h.textContent = text;
+        h.className = 'headline ' + cls;
+        $('#liveToggle').textContent = f.enabled ? 'Stop following' : 'Start following';
+        $('#liveToggle').className = f.enabled ? '' : 'primary';
+        $('#liveResume').hidden = !(c && c.pausedS > 0);
+        const fix = f.fix;
+        $('#lvPos').textContent = fix ? `${fix.latitude.toFixed(5)}, ${fix.longitude.toFixed(5)}` : 'none';
+        $('#lvAge').textContent = fix ? `${fix.ageS.toFixed(1)} s` : '-';
+        $('#lvCogSog').textContent =
+            (f.cog ? `${fmtBearing(f.cog.value)}` : '-') +
+            ' / ' +
+            (f.sog ? `${knots(f.sog.value).toFixed(1)} kn` : '-') +
+            (f.leadS ? `  (aiming ${f.leadS} s ahead)` : '');
+        $('#lvBrg').textContent =
+            c && c.range !== null ? `bearing ${fmtBearing(c.bearing)}  range ${fmtRange(c.range)}` : '-';
+        $('#lvIn').textContent =
+            c && c.inZones.length ? c.inZones.map((z) => `${z.name} (p${z.priority})`).join(', ') : 'none';
+        $('#lvZone').textContent =
+            c && c.zone
+                ? `${c.zone.name} (${c.zone.mode === 'fixed' ? 'fixed' : 'follow'}, p${c.zone.priority})`
+                : 'none';
+        $('#lvPending').textContent =
+            c && c.pending
+                ? `to ${c.pending.to ? c.pending.to.name : 'none (release)'} in ${c.pending.remainingS.toFixed(1)} s`
+                : 'no';
+        $('#lvReason').textContent = c ? `${c.reason}, ${c.sent} moves sent` : '-';
+        const ptz = (v) => (v ? `pan ${fmtN(v.x)}  tilt ${fmtN(v.y)}  zoom ${fmtN(v.zoom)}` : '-');
+        $('#lvWant').textContent = c ? ptz(c.want) : '-';
+        $('#lvLast').textContent = c && c.last ? `${ptz(c.last)}  ${c.last.ageS.toFixed(1)} s ago` : '-';
+        $('#lvCam').textContent = lastStatus ? `${ptz(lastStatus)}  ${lastStatus.moveStatus || ''}` : '-';
+    }
+
+    async function pollLive() {
+        clearTimeout(liveTimer);
+        if (!$('#liveDlg').open) return;
+        try {
+            renderLive(await api('GET', '/follow'));
+        } catch (err) {
+            $('#liveHeadline').textContent = err.message;
+        }
+        liveTimer = setTimeout(pollLive, 500);
+    }
+
+    $('#liveBtn').addEventListener('click', () => {
+        $('#liveDlg').showModal();
+        pollLive();
+    });
+    $('#liveClose').addEventListener('click', () => $('#liveDlg').close());
+    $('#liveDlg').addEventListener('close', () => clearTimeout(liveTimer));
+    $('#liveToggle').addEventListener('click', async () => {
+        await putSettings({followEnabled: !state.settings.followEnabled}, '#tuningMsg');
+        pollLive();
+        pollFollow();
+    });
+    $('#liveResume').addEventListener('click', async () => {
+        if (state.cameraId) await api('POST', `/follow/${encodeURIComponent(state.cameraId)}/resume`).catch(showError);
+        pollLive();
+    });
 
     // ---- Export / import of zones and calibration (import replaces)
 

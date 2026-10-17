@@ -131,7 +131,13 @@ test('follows a moving boat: hold on entry, at most one move per interval, aims 
     const st = follower.status().cameras.c1;
     assert.equal(st.zone, null);
     assert.equal(st.reason, 'outside (hold)');
-    assert.equal(st.pending.id, store.state.zones.find((z) => z.geometry.refName === 'Wedge').id);
+    assert.equal(st.pending.to.name, 'Wedge');
+    assert.ok(st.pending.remainingS > 0 && st.pending.remainingS <= 1, `hold left ${st.pending.remainingS}`);
+    assert.deepEqual(
+        st.inZones.map((z) => z.name),
+        ['Wedge']
+    );
+    assert.ok(Math.abs(st.range - 1000) < 1, `range ${st.range}`);
     await run(30000, step);
     const ms = moves();
     // 5 m/s at 1000 m is 0.29 deg/s, 0.0016 pan units/s: the 0.003 deadband is crossed about
@@ -185,7 +191,8 @@ test('leaving all zones releases after the hold; stale position stops; manual pa
     fix(at(100, 1000));
     await run(1000);
     assert.equal(follower.status().cameras.c1.zone.name, 'Wedge');
-    assert.equal(follower.status().cameras.c1.pending.id, null, 'release pending');
+    assert.equal(follower.status().cameras.c1.pending.to, null, 'release pending');
+    assert.deepEqual(follower.status().cameras.c1.inZones, []);
     await run(1500);
     assert.equal(follower.status().cameras.c1.reason, 'outside all zones');
     assert.equal(follower.status().cameras.c1.zone, null);
