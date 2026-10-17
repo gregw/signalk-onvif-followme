@@ -128,6 +128,30 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await row.locator('text=Go to').click();
     await page.locator('#status', {hasText: 'pan 0.250'}).waitFor();
 
+    // Here then Go to, with more decimals than 0.001 steps (the camera reports e.g.
+    // 0.8614444444444445): the form must accept them.
+    await fetch(srv.api + '/camera/camera1/move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: 'absolute', x: 0.12345, y: -0.06789, zoom: 0.1})
+    });
+    await page.locator('#status', {hasText: 'pan 0.123  tilt -0.068'}).waitFor();
+    await page.locator('#status', {hasText: 'IDLE'}).waitFor();
+    await page.click('#hereBtn');
+    assert.equal(await page.inputValue('#absForm [name=x]'), '0.1235');
+    await fetch(srv.api + '/camera/camera1/move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: 'absolute', x: -0.4, y: 0, zoom: 0})
+    });
+    await page.locator('#status', {hasText: 'pan -0.400'}).waitFor();
+    await page.click('#absForm button[type=submit]');
+    await page.locator('#status', {hasText: 'pan 0.123  tilt -0.068'}).waitFor();
+    const back = await (await fetch(srv.api + '/camera/camera1/status')).json();
+    assert.equal(back.x, 0.1235);
+    assert.equal(back.y, -0.0679);
+    assert.equal(await page.evaluate(() => document.querySelector('#absForm').checkValidity()), true);
+
     // Reload: state persisted in the plugin.
     await page.reload();
     await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
