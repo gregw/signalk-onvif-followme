@@ -383,6 +383,15 @@ input.narrow {
 #zones td {
     padding: 4px 5px;
 }
+/* Scrolls past SAMPLE_ROWS rows (app.js sets the height); the header stays in view. */
+#samplesWrap {
+    overflow-y: auto;
+}
+#samples thead th {
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+}
 #samples td button,
 #zones td button {
     padding: 2px 7px;

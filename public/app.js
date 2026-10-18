@@ -1024,6 +1024,21 @@
         updateWpInfo();
     }
 
+    const SAMPLE_ROWS = 10;
+
+    /** Limit the samples table to SAMPLE_ROWS rows, scrolling the rest. */
+    function fitSampleRows() {
+        const wrap = $('#samplesWrap');
+        const rows = $('#samples tbody').rows;
+        if (rows.length <= SAMPLE_ROWS) return (wrap.style.maxHeight = '');
+        if (!wrap.offsetHeight) return (wrap.style.maxHeight = ''); // not laid out (hidden)
+        // Down to the top of the first hidden row, including the table's margin and header.
+        const top = rows[SAMPLE_ROWS].getBoundingClientRect().top - wrap.getBoundingClientRect().top;
+        wrap.style.maxHeight = `${top + wrap.scrollTop}px`;
+    }
+
+    window.addEventListener('resize', fitSampleRows);
+
     async function renderCalibration() {
         const tbody = $('#samples tbody');
         const t = calTarget();
@@ -1071,6 +1086,7 @@
             tr.append(el('td', {className: 'actions'}, go, del));
             tbody.append(tr);
         }
+        fitSampleRows();
         if (!cal.cameraPosition) msg('#calMsg', 'Set the camera position to see bearing and range.', 'bad');
     }
 

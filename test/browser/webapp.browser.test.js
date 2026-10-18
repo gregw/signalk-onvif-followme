@@ -28,6 +28,7 @@ async function shot(page, name) {
     if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, name + '.png'), fullPage: true});
 }
 
+const near = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
 const lastCam = () => srv.cameras[srv.cameras.length - 1].adapter;
 
 test('configure camera, live view, jog, zone, calibrate by waypoint', async () => {
@@ -558,6 +559,57 @@ test('follow: switch on, boat enters a zone, camera aims, manual jog pauses, res
         await page.locator('#followStatus', {hasText: 'Follow: off'}).waitFor();
         await page.waitForFunction(() => !document.querySelector('#zones tbody tr.active'));
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'follow.png'), fullPage: true});
+        assert.deepEqual(errors, []);
+    } finally {
+        await ctx.close();
+        await fresh.close();
+    }
+});
+
+test('more than 10 calibration samples scroll, with the header in view', async () => {
+    const fresh = await startDevServer();
+    const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
+    try {
+        const page = await ctx.newPage();
+        const errors = [];
+        page.on('pageerror', (e) => errors.push(e.message));
+        const send = (method, p, b) =>
+            fetch(fresh.api + p, {
+                method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(b)
+            }).then((r) => r.json());
+        await send('PUT', '/cameras/cam', {
+            conn: {hostname: 'h'},
+            pose: {position: {latitude: -27.4, longitude: 153.19, height: 30}}
+        });
+        const calId = (await (await fetch(fresh.api + '/state')).json()).cameras[0].calibrationId;
+        const add = (i) =>
+            send('POST', `/calibration/${calId}`, {name: `wp${i}`, latitude: -27.39 - i * 0.001, longitude: 153.2});
+        for (let i = 0; i < 10; i++) await add(i);
+
+        await page.goto(fresh.url);
+        const rows = page.locator('#samples tbody tr');
+        await rows.nth(9).waitFor();
+        const fits = () =>
+            page.locator('#samplesWrap').evaluate((w) => ({client: w.clientHeight, scroll: w.scrollHeight}));
+        let f = await fits();
+        assert.equal(f.scroll, f.client, '10 rows: no scrolling');
+
+        await add(10);
+        await add(11);
+        await page.reload();
+        await rows.nth(11).waitFor();
+        f = await fits();
+        assert.ok(f.scroll > f.client, `12 rows scroll: ${JSON.stringify(f)}`);
+        const box = (l) => l.evaluate((e) => e.getBoundingClientRect().toJSON());
+        const wrap = await box(page.locator('#samplesWrap'));
+        const tenth = await box(rows.nth(9));
+        near(wrap.bottom, tenth.bottom, 2, 'ten rows shown');
+
+        await page.locator('#samplesWrap').evaluate((w) => (w.scrollTop = w.scrollHeight));
+        const head = await box(page.locator('#samples thead th').first());
+        near(head.top, wrap.top, 2, 'header stays at the top');
         assert.deepEqual(errors, []);
     } finally {
         await ctx.close();
