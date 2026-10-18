@@ -110,7 +110,7 @@ test('least squares line: worked values', () => {
     near(fitLine([{x: 5, y: 0.3}]).at(9), 0.3, 1e-12, 'one point is flat');
 });
 
-test('only the 3 samples nearest the target count: a bad near sample stays local', () => {
+test('a bad near sample stays out of the triangle for a far target', () => {
     // Far samples on the true camera, plus one 190 m out that is 0.012 pan (about 2 degrees) off,
     // between them in bearing. The old bearing-order model interpolated through it for every
     // target at bearings 211 to 228, at any range.
@@ -128,25 +128,79 @@ test('only the 3 samples nearest the target count: a bad near sample stays local
     assert.deepEqual([...a.neighbours].sort(), ['far1', 'far2', 'far3']);
     near(a.x, trueCamera(boat).x, 0.0005, 'far target unaffected by the bad sample');
 
+    assert.deepEqual(a.outside, {pan: false, tilt: false, zoom: false});
+
     const close = cal.aim(at(216, 220));
     assert.ok(close.neighbours.includes('bad'), 'a target near it does use it');
-    assert.equal(buildCalibration(CAM, [...far, bad], {neighbours: 2}).aim(boat).neighbours.length, 2);
 });
 
-test('neighbours on one bearing keep the slope through all samples', () => {
-    // Three samples down one radial: their bearings cannot fix a pan slope.
+test('the smallest containing triangle wins, by perimeter not area', () => {
+    const named = (b, r, name) => ({...sample(at(b, r)), name});
+    const cal = buildCalibration(CAM, [
+        named(150, 500, 'A'),
+        named(250, 500, 'B'),
+        named(200, 5000, 'C'),
+        named(195, 1000, 'D'),
+        named(205, 1000, 'E'),
+        named(200, 2000, 'F')
+    ]);
+    const t = at(200, 1300);
+    const a = cal.aim(t);
+    assert.deepEqual([...a.neighbours].sort(), ['D', 'E', 'F']);
+    near(a.x, trueCamera(t).x, 1e-6, 'pan exact for a linear camera');
+    near(a.y, trueCamera(t).y, 1e-6, 'tilt exact for a linear camera');
+    near(a.zoom, trueCamera(t).zoom, 0.002, 'zoom by range');
+    assert.deepEqual(cal.aim(at(100, 1300)).outside.pan, true, 'outside every triangle: nearest fit');
+});
+
+test('a long thin sliver loses to a compact triangle of smaller perimeter', () => {
+    // Compact: about 1 km a side around the target. Slivers: one far sample beyond the target
+    // and two nearly in line with it, smaller in area but several km round.
+    const named = (b, r, name) => ({...sample(at(b, r)), name});
+    const samples = [
+        named(185, 2000, 'C1'),
+        named(215, 2000, 'C2'),
+        named(200, 900, 'C3'),
+        named(196, 300, 'S1'),
+        named(202, 6000, 'S2'),
+        named(199, 3500, 'S3')
+    ];
+    const pl = (p) => {
+        const {bearing, range} = g.bearingRange(CAM, p);
+        return [range * Math.sin(bearing), range * Math.cos(bearing)];
+    };
+    const area = (names) => {
+        const [a, b, c] = names.map((n) => pl(samples.find((s) => s.name === n)));
+        return Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+    };
+    // Only meaningful if a sliver that contains the target has the smaller area.
+    assert.ok(area(['S1', 'S2', 'S3']) < area(['C1', 'C2', 'C3']));
+    const a = buildCalibration(CAM, samples).aim(at(200, 1500));
+    assert.deepEqual([...a.neighbours].sort(), ['C1', 'C2', 'C3']);
+});
+
+test('outside every triangle: nearest samples on one bearing keep the slope through all samples', () => {
+    // Beyond the samples, the nearest three are down one radial: they cannot fix a pan slope.
     const radial = [at(200, 1000), at(200, 1500), at(200, 2000)];
     const wide = [at(150, 1500), at(250, 1500)];
     const cal = buildCalibration(
         CAM,
         [...radial, ...wide].map((p) => sample(p))
     );
-    const t = at(203, 1500);
+    const t = at(203, 3000);
     const a = cal.aim(t);
+    assert.deepEqual([...a.neighbours].length, 3);
     near(a.x, trueCamera(t).x, 0.0005, 'pan from the global slope');
     near(a.y, trueCamera(t).y, 0.002, 'tilt still local');
-    assert.equal(a.outside.pan, true);
-    assert.equal(a.outside.zoom, false);
+    assert.deepEqual(a.outside, {pan: true, tilt: true, zoom: true});
+    assert.equal(
+        buildCalibration(
+            CAM,
+            [...radial, ...wide].map((p) => sample(p)),
+            {neighbours: 2}
+        ).aim(t).neighbours.length,
+        2
+    );
 });
 
 test('needs two bearings; zero height uses range for tilt', () => {
