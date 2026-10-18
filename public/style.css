@@ -402,13 +402,15 @@ input.narrow {
     gap: 6px;
     font-size: 13px;
 }
-.testaim {
-    margin-top: 6px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
+.wprow {
+    align-items: flex-end;
 }
-.testaim select {
-    min-width: 180px;
+.wprow .grow {
+    flex: 1;
+    min-width: 0;
+}
+.wprow select {
+    width: 100%;
 }
 .spacer {
     flex: 1;

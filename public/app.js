@@ -896,16 +896,15 @@
         const prev = f.waypoint.value;
         const options = byName(state.waypoints).map(([id, w]) => [id, w.name || id]);
         fillSelect(f.waypoint, options, {blank: '(choose a waypoint)', selected: prev});
-        const a = $('#aimForm').waypoint;
-        fillSelect(a, options, {blank: '(choose a waypoint)', selected: a.value});
         updateWpInfo();
     }
 
     // ---- Test aim: what the camera would do with the boat at a waypoint
 
     async function testAim() {
-        const id = $('#aimForm').waypoint.value;
-        if (!id || !state.cameraId) return;
+        const id = $('#calForm').waypoint.value;
+        if (!state.cameraId) return;
+        if (!id) return msg('#aimMsg', 'Choose a waypoint.', 'bad');
         msg('#aimMsg', 'Aiming...');
         try {
             const w = await freshWaypoint(id);
@@ -934,11 +933,7 @@
         }
     }
 
-    $('#aimForm').waypoint.addEventListener('change', testAim);
-    $('#aimForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        testAim();
-    });
+    $('#aimBtn').addEventListener('click', testAim);
 
     const zoneNames = (ids) =>
         ids
@@ -1001,6 +996,19 @@
         }
     });
 
+    /**
+     * Select the waypoint a sample was captured at, for easy recalibration: the same id if it
+     * still exists, else one with the same name (samples are one per name). Else unchanged.
+     */
+    function selectSampleWaypoint(s) {
+        const name = (s.name || '').trim();
+        let id = s.waypointId && state.waypoints[s.waypointId] ? s.waypointId : null;
+        if (!id && name) id = Object.keys(state.waypoints).find((k) => (state.waypoints[k].name || '').trim() === name);
+        if (!id) return;
+        $('#calForm').waypoint.value = id;
+        updateWpInfo();
+    }
+
     async function renderCalibration() {
         const tbody = $('#samples tbody');
         const t = calTarget();
@@ -1031,7 +1039,10 @@
             ];
             for (const c of cells) tr.append(el('td', {textContent: c}));
             const go = el('button', {type: 'button', textContent: 'Go to'});
-            go.onclick = () => api('POST', `/calibration/${t.id}/${s.id}/goto`).catch(showError);
+            go.onclick = () => {
+                selectSampleWaypoint(s);
+                api('POST', `/calibration/${t.id}/${s.id}/goto`).catch(showError);
+            };
             const del = el('button', {type: 'button', textContent: '\u2715', title: 'Delete sample', className: 'del'});
             del.onclick = async () => {
                 if (!confirm(`Delete sample ${s.name || ''}?`)) return;

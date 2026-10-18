@@ -152,31 +152,32 @@
             <section id="calPanel" class="panel">
                 <h2>Calibration</h2>
                 <form id="calForm" class="stack">
-                    <label
-                        >Waypoint
-                        <select name="waypoint"></select>
-                    </label>
+                    <div class="row wprow">
+                        <label class="grow"
+                            >Waypoint
+                            <select name="waypoint"></select>
+                        </label>
+                        <button type="submit" id="captureBtn" title="Store where the camera is looking now">
+                            Capture
+                        </button>
+                        <button
+                            type="button"
+                            id="aimBtn"
+                            title="Aim as if the boat were at the waypoint. Re-reads the waypoint, so move it in Freeboard and test again"
+                        >
+                            Test
+                        </button>
+                    </div>
                     <div id="wpInfo" class="mono small"></div>
                     <div class="row">
-                        <button type="submit" id="captureBtn">Capture</button>
                         <button type="button" id="refreshWpBtn">Reload waypoints</button>
                     </div>
                 </form>
-                <p class="hint small">Pick a waypoint, centre it under the cross hairs, then capture.</p>
+                <p class="hint small">
+                    Pick a waypoint, centre it under the cross hairs, then Capture. Test shows what following would do
+                    with the boat there. Go to on a sample selects its waypoint again.
+                </p>
                 <div id="calMsg" class="msg"></div>
-                <form id="aimForm" class="row testaim">
-                    <label
-                        >Test aim at waypoint
-                        <select name="waypoint"></select>
-                    </label>
-                    <button
-                        type="submit"
-                        id="aimBtn"
-                        title="Re-reads the waypoint, so move it in Freeboard and test again"
-                    >
-                        Test
-                    </button>
-                </form>
                 <div id="aimMsg" class="msg mono small"></div>
                 <div class="tablewrap">
                     <table id="samples">

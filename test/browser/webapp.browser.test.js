@@ -117,7 +117,13 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.locator('#calForm [name=waypoint]').selectOption({label: 'Pile 7'});
     await page.locator('#wpInfo', {hasText: 'bearing 090.0'}).waitFor();
     await page.locator('#wpInfo', {hasText: 'zones: Harbour'}).waitFor();
-    assert.equal(await page.locator('#calForm [name=set] option:checked').textContent(), 'Camera Apartment');
+    assert.equal(await page.locator('#calForm select').count(), 1, 'one waypoint selector');
+    // Capture and Test sit on the selector's row.
+    const sb = await page.locator('#calForm [name=waypoint]').boundingBox();
+    for (const b of ['#captureBtn', '#aimBtn']) {
+        const bb = await page.locator(b).boundingBox();
+        assert.ok(bb.x > sb.x + sb.width - 1 && bb.y < sb.y + sb.height && bb.y + bb.height > sb.y, `${b} beside`);
+    }
     await page.click('#captureBtn');
     await page.locator('#calMsg', {hasText: 'Captured Pile 7: pan 0.250 tilt -0.100 zoom 0.200'}).waitFor();
     // Capturing the same waypoint again replaces the first sample.
@@ -139,12 +145,15 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     assert.ok(zb.x > vb.x + vb.width - 1 && zb.y > cb.y + cb.height - 1, 'zones right of view, below calibration');
     await shot(page, 'desktop');
 
-    // Go to the sample from elsewhere.
+    // Go to the sample from elsewhere; it selects the sample's waypoint again.
+    await page.locator('#calForm [name=waypoint]').selectOption({label: '(choose a waypoint)'});
     await page.fill('#absForm [name=x]', '-0.5');
     await page.click('#absForm button[type=submit]');
     await page.locator('#status', {hasText: 'pan -0.500'}).waitFor();
     await row.locator('text=Go to').click();
     await page.locator('#status', {hasText: 'pan 0.250'}).waitFor();
+    assert.equal(await page.locator('#calForm [name=waypoint] option:checked').textContent(), 'Pile 7');
+    await page.locator('#wpInfo', {hasText: 'bearing 090.0'}).waitFor();
 
     // Here then Go to, with more decimals than 0.001 steps (the camera reports e.g.
     // 0.8614444444444445): the form must accept them.
@@ -272,15 +281,7 @@ test('capture without any zone goes to the camera set; fixed zone view; override
         await zrow.locator('[aria-label=priority]').press('Tab');
         await page.locator('#zoneMsg', {hasText: 'Saved Close in'}).waitFor();
 
-        // Own calibration: the zone's set appears in the calibration set list, empty.
-        await zrow.locator('[aria-label="own calibration"]').check();
-        await page.locator('#calForm [name=set] option', {hasText: 'Zone Close in (own)'}).waitFor({state: 'attached'});
-        await page.locator('#calForm [name=set]').selectOption({label: 'Zone Close in (own)'});
-        await page.locator('#samples', {hasText: 'No samples yet'}).waitFor();
-        page.once('dialog', (d) => d.accept());
-        await zrow.locator('[aria-label="own calibration"]').uncheck();
-        await page.locator('#samples tbody tr', {hasText: 'Pile 7'}).waitFor();
-        assert.equal(await page.locator('#calForm [name=set] option').count(), 1);
+        assert.equal(await zrow.locator('input[type=checkbox]').count(), 0, 'no Own checkbox');
 
         // Hold setting.
         await page.fill('#holdS', '3');
@@ -348,7 +349,8 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
             feature: {type: 'Feature', geometry: {type: 'Point', coordinates: [153.2, -27.405]}}
         };
         await page.click('#refreshWpBtn');
-        await page.locator('#aimForm [name=waypoint]').selectOption({label: 'Test boat'});
+        await page.locator('#calForm [name=waypoint]').selectOption({label: 'Test boat'});
+        await page.click('#aimBtn');
         await page.locator('#aimMsg', {hasText: 'Test boat: zone Harbour (follow)'}).waitFor();
         const pan1 = Number(/pan (-?[\d.]+)/.exec(await page.locator('#aimMsg').textContent())[1]);
         assert.ok(pan1 > 0.1 && pan1 < 0.4, `pan between the samples: ${pan1}`);
@@ -519,7 +521,8 @@ test('follow: switch on, boat enters a zone, camera aims, manual jog pauses, res
             assert.equal(moved(), m, 'no follow moves while paused');
             await page.click('#resumeBtn');
             await page.locator('#followStatus', {hasText: 'following Harbour'}).waitFor();
-            await new Promise((r) => setTimeout(r, 800));
+            // The follow loop ticks every 1 s: allow a couple of ticks.
+            for (let i = 0; i < 30 && moved() <= m; i++) await new Promise((r) => setTimeout(r, 100));
             assert.ok(moved() > m, 'following again after resume');
         } finally {
             clearInterval(timer);
