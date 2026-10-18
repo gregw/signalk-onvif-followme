@@ -29,6 +29,7 @@
         settings: {holdS: 5},
         waypoints: {},
         regions: {},
+        samples: [],
         cameraId: null
     };
 
@@ -935,6 +936,18 @@
 
     $('#aimBtn').addEventListener('click', testAim);
 
+    /** A waypoint already captured: the same id, or the same name (samples are one per name). */
+    function isSampleWaypoint(id) {
+        const name = ((state.waypoints[id] && state.waypoints[id].name) || '').trim();
+        return state.samples.some((s) => s.waypointId === id || (name && (s.name || '').trim() === name));
+    }
+
+    // Test is the obvious next step for a waypoint that is not a calibration point.
+    function updateAimBtn() {
+        const id = $('#calForm').waypoint.value;
+        $('#aimBtn').classList.toggle('primary', !!id && !isSampleWaypoint(id));
+    }
+
     const zoneNames = (ids) =>
         ids
             .map((id) => state.zones.find((z) => z.id === id))
@@ -945,6 +958,7 @@
     async function updateWpInfo() {
         const f = $('#calForm');
         const w = state.waypoints[f.waypoint.value];
+        updateAimBtn();
         const p = wpPos(w);
         if (!p) return ($('#wpInfo').textContent = '');
         const q = new URLSearchParams({latitude: p.latitude, longitude: p.longitude});
@@ -1014,6 +1028,8 @@
         const t = calTarget();
         $('#captureBtn').disabled = !t;
         if (!t) {
+            state.samples = [];
+            updateAimBtn();
             tbody.innerHTML = '<tr><td colspan="7" class="hint">Save a camera first.</td></tr>';
             return;
         }
@@ -1023,6 +1039,8 @@
         } catch (err) {
             return msg('#calMsg', err.message, 'bad');
         }
+        state.samples = cal.samples;
+        updateAimBtn();
         tbody.innerHTML = '';
         if (!cal.samples.length) tbody.innerHTML = '<tr><td colspan="7" class="hint">No samples yet.</td></tr>';
         // Sorted by bearing so a monotonic pan(bearing) is visible at a glance.

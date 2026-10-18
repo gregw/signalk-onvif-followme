@@ -349,7 +349,17 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
             feature: {type: 'Feature', geometry: {type: 'Point', coordinates: [153.2, -27.405]}}
         };
         await page.click('#refreshWpBtn');
+        // Test looks active for a waypoint that is not a calibration point, not for one that is.
+        const aimPrimary = () => page.locator('#aimBtn').evaluate((b) => b.classList.contains('primary'));
+        await page.locator('#calForm [name=waypoint]').selectOption({label: 'Pile 7'});
+        assert.equal(await aimPrimary(), false, 'Test plain on a calibration waypoint');
         await page.locator('#calForm [name=waypoint]').selectOption({label: 'Test boat'});
+        assert.equal(await aimPrimary(), true, 'Test active on another waypoint');
+        assert.equal(
+            await page.locator('#aimBtn').evaluate((b) => getComputedStyle(b).backgroundColor),
+            await page.locator('#captureBtn').evaluate((b) => getComputedStyle(b).backgroundColor),
+            'Test styled like Capture'
+        );
         await page.click('#aimBtn');
         await page.locator('#aimMsg', {hasText: 'Test boat: zone Harbour (follow)'}).waitFor();
         const pan1 = Number(/pan (-?[\d.]+)/.exec(await page.locator('#aimMsg').textContent())[1]);
