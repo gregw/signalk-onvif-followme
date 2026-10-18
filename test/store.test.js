@@ -68,19 +68,16 @@ test('zones: geometry snapshot, priority, modes, calibration override, cascade d
         message: /refName/
     });
     assert.equal(s.state.calibrations.length, 1, 'rejected requests leave no calibration behind');
-    const z1 = await s.createZone({cameraId: 'apt', geometry: region('rg-1', 'Harbour'), calibrationOverride: true});
+    const z1 = await s.createZone({cameraId: 'apt', geometry: region('rg-1', 'Harbour')});
     assert.equal('name' in z1, false, 'named by its region');
     await assert.rejects(s.createZone({cameraId: 'apt', geometry: region('rg-1', 'Harbour')}), {status: 409});
-    await assert.rejects(s.putZone(z1.id, {cameraId: 'apt', mode: {type: 'nope'}, calibrationOverride: false}), {
-        status: 400
-    });
-    assert.ok(s.zone(z1.id).calibrationId, 'failed update did not drop the override');
-    await s.putZone(z1.id, {cameraId: 'apt', calibrationOverride: false});
+    await assert.rejects(s.putZone(z1.id, {cameraId: 'apt', mode: {type: 'nope'}}), {status: 400});
     assert.equal(z1.mode.type, 'followme');
     assert.equal(z1.geometry.frame, 'absolute');
     assert.equal(z1.priority, 1);
-    assert.equal(z1.calibrationId, null, 'uses the camera set by default');
-    assert.equal(s.zoneCalibration(z1.id).id, c.calibrationId);
+    assert.equal('calibrationId' in z1, false, 'zones use the camera set');
+    assert.equal(s.cameraCalibration('apt').id, c.calibrationId);
+    assert.equal(s.state.calibrations.length, 1);
     await assert.rejects(s.putZone(z1.id, {cameraId: 'apt', geometry: {polygon: {type: 'Point'}}}), {status: 400});
     await assert.rejects(s.putZone(z1.id, {cameraId: 'apt', mode: {type: 'landmark'}}), {status: 400});
     await assert.rejects(s.putZone(z1.id, {cameraId: 'apt', priority: 1.5}), {status: 400});
@@ -97,18 +94,8 @@ test('zones: geometry snapshot, priority, modes, calibration override, cascade d
     assert.equal(s.zone(z2.id).priority, 7);
     await assert.rejects(s.setFixedView(z1.id, {x: 0, y: 0, zoom: 0}), {status: 400});
 
-    // Override on, sample into it, override off drops it.
-    await s.putZone(z1.id, {cameraId: 'apt', calibrationOverride: true});
-    const ov = s.zone(z1.id).calibrationId;
-    assert.ok(ov && ov !== c.calibrationId);
+    await s.putZone(z1.id, {cameraId: 'apt', priority: 3});
     assert.equal(s.zone(z1.id).geometry.ref, 'rg-1', 'geometry kept when not sent');
-    await s.addSample(ov, {latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
-    await s.putZone(z1.id, {cameraId: 'apt', calibrationOverride: false});
-    assert.equal(s.zone(z1.id).calibrationId, null);
-    assert.equal(
-        s.state.calibrations.some((x) => x.id === ov),
-        false
-    );
 
     // Samples on the camera set.
     const {sample: smp} = await s.addSample(
@@ -163,19 +150,38 @@ test('one sample per waypoint name per set: a new capture replaces the old, even
     await s.addSample(c.calibrationId, {latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
     await s.addSample(c.calibrationId, {name: '  ', latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
     assert.equal(s.calibration(c.calibrationId).samples.length, 5);
-    // A zone override set is separate: same name there does not touch the camera set.
-    const z = await s.createZone({
-        cameraId: 'apt',
-        geometry: {ref: 'rg-1', refName: 'H', polygon: square},
-        calibrationOverride: true
-    });
-    const ov = await s.addSample(
-        z.calibrationId,
-        {name: 'reef', latitude: -27.4, longitude: 153.2},
-        {x: 0, y: 0, zoom: 0}
+});
+
+test('loading drops per zone calibration sets (removed 2026-10-18)', (t) => {
+    const dir = tmp(t);
+    const smp = {id: 's', name: 'reef', latitude: -27.4, longitude: 153.2, ptz: {x: 0, y: 0, zoom: 0}};
+    fs.writeFileSync(
+        path.join(dir, 'state.json'),
+        JSON.stringify({
+            version: 2,
+            settings: {holdS: 5},
+            cameras: [{id: 'apt', conn: {hostname: 'h'}, calibrationId: 'c1'}],
+            zones: [
+                {id: 'z1', cameraId: 'apt', priority: 1, geometry: {ref: 'r', refName: 'H'}, calibrationId: 'zc'},
+                {id: 'z2', cameraId: 'apt', priority: 2, geometry: {ref: 'r2', refName: 'J'}, calibrationId: null}
+            ],
+            calibrations: [
+                {id: 'c1', owner: {type: 'camera', id: 'apt'}, samples: [smp]},
+                {id: 'zc', owner: {type: 'zone', id: 'z1'}, samples: [smp]}
+            ]
+        })
     );
-    assert.deepEqual(ov.replaced, []);
-    assert.equal(s.calibration(c.calibrationId).samples.filter((x) => x.name === 'reef').length, 1);
+    const logs = [];
+    const s = new Store(dir, {log: (m) => logs.push(m)}).load();
+    assert.deepEqual(
+        s.state.calibrations.map((c) => c.id),
+        ['c1']
+    );
+    assert.equal(
+        s.state.zones.some((z) => 'calibrationId' in z),
+        false
+    );
+    assert.match(logs.join('\n'), /zone z1: dropping its own calibration set/);
 });
 
 test('loading keeps only the newest sample per name', (t) => {
@@ -228,16 +234,11 @@ test('export then import round trip: everything but passwords; import replaces; 
     const z2 = await s.createZone({
         cameraId: 'apt',
         geometry: geometry('rg-2', 'Close'),
-        mode: {type: 'fixed'},
-        calibrationOverride: true
+        mode: {type: 'fixed'}
     });
     await s.setFixedView(z2.id, {x: 0.1, y: 0.2, zoom: 0.3});
     await s.addSample(c.calibrationId, {name: 'reef', latitude: -27.4, longitude: 153.2}, {x: 0, y: 0, zoom: 0});
-    await s.addSample(
-        s.zone(z2.id).calibrationId,
-        {name: 'pile', latitude: -27.41, longitude: 153.2},
-        {x: 1, y: 0, zoom: 0}
-    );
+    await s.addSample(c.calibrationId, {name: 'pile', latitude: -27.41, longitude: 153.2}, {x: 1, y: 0, zoom: 0});
     const file = JSON.parse(JSON.stringify(s.exportData()));
     assert.equal(file.format, 'signalk-onvif-followme');
     assert.equal(file.version, 2);
@@ -270,8 +271,10 @@ test('export then import round trip: everything but passwords; import replaces; 
     );
     assert.deepEqual(s2.zone(z2.id).mode.ptz, {x: 0.1, y: 0.2, zoom: 0.3});
     assert.equal(s2.camera('apt').calibrationId, c.calibrationId);
-    assert.equal(s2.zoneCalibration(z2.id).samples[0].name, 'pile');
-    assert.equal(s2.zoneCalibration(z1.id).samples[0].name, 'reef');
+    assert.deepEqual(
+        s2.cameraCalibration('apt').samples.map((x) => x.name),
+        ['reef', 'pile']
+    );
 
     // A server that never had the camera: imported without a password, flagged.
     const s3 = new Store(tmp(t)).load();
@@ -296,11 +299,22 @@ test('export then import round trip: everything but passwords; import replaces; 
     await bad((f) => (f.cameras[0].conn.port = 0), /camera apt: conn.port/);
     await bad((f) => f.cameras.push(f.cameras[0]), /duplicate camera ids/);
     await bad((f) => (f.settings.holdS = -1), /setting holdS/);
-    await bad((f) => (f.zones[1].calibrationId = 'missing'), /missing from the file/);
     await bad((f) => (f.calibrations[0].samples[0].latitude = 'x'), /latitude/);
     await bad((f) => f.zones.push({...f.zones[0], id: 'dup'}), /two zones for region/);
     await bad((f) => delete f.zones[0].geometry.refName, /refName/);
     assert.equal(JSON.stringify(s2.state), before);
+
+    // An older file with a zone's own set: the set is ignored, the zone kept.
+    await s2.importData({
+        ...file,
+        zones: file.zones.map((z) => ({...z, calibrationId: 'zc'})),
+        calibrations: [...file.calibrations, {id: 'zc', owner: {type: 'zone', id: z2.id}, samples: []}]
+    });
+    assert.equal(s2.state.calibrations.length, 1);
+    assert.equal(
+        s2.state.zones.some((z) => 'calibrationId' in z),
+        false
+    );
 
     // Unknown settings from a newer version are ignored.
     await s2.importData({...file, settings: {...file.settings, futureKnob: 3}});
@@ -424,7 +438,7 @@ test('migrates a version 1 state file: zone samples move to the camera set', asy
     const camCal = s.calibration(s.camera('apt').calibrationId);
     assert.deepEqual(camCal.owner, {type: 'camera', id: 'apt'});
     assert.equal(camCal.samples[0].id, 's1');
-    assert.equal(s.zone('z1').calibrationId, null);
+    assert.equal('calibrationId' in s.zone('z1'), false);
     assert.equal(s.zone('z1').priority, 1);
     assert.match(logs[0], /migrated/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')).version, 2);

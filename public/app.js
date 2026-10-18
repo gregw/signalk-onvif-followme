@@ -29,8 +29,7 @@
         settings: {holdS: 5},
         waypoints: {},
         regions: {},
-        cameraId: null,
-        calId: null
+        cameraId: null
     };
 
     // ---- HTTP
@@ -481,7 +480,6 @@
             cameraId: z.cameraId,
             priority: z.priority,
             mode: {type: z.mode.type},
-            calibrationOverride: !!z.calibrationId,
             ...changes
         };
         try {
@@ -525,15 +523,6 @@
                 'aria-label': 'priority'
             });
             prio.onchange = () => saveZone(z, {priority: Number(prio.value)});
-
-            const own = el('input', {type: 'checkbox', checked: !!z.calibrationId, 'aria-label': 'own calibration'});
-            own.onchange = () => {
-                if (!own.checked && !confirm(`Discard ${zoneName(z)}'s own calibration samples?`)) {
-                    own.checked = true;
-                    return;
-                }
-                saveZone(z, {calibrationOverride: own.checked});
-            };
 
             const view = el('td', {className: 'view-cell'});
             if (z.mode.type === 'fixed') {
@@ -582,8 +571,7 @@
 
             const del = el('button', {type: 'button', textContent: '\u2715', title: 'Delete zone', className: 'del'});
             del.onclick = async () => {
-                const extra = z.calibrationId ? ' and its own calibration samples' : '';
-                if (!confirm(`Delete zone "${zoneName(z)}"${extra}?`)) return;
+                if (!confirm(`Delete zone "${zoneName(z)}"?`)) return;
                 try {
                     await api('DELETE', `/zones/${z.id}`);
                     state.zones = state.zones.filter((x) => x.id !== z.id);
@@ -596,16 +584,7 @@
 
             actions.append(del);
             tbody.append(
-                el(
-                    'tr',
-                    {dataset: {zone: z.id}},
-                    name,
-                    el('td', {}, mode),
-                    el('td', {}, prio),
-                    el('td', {}, own),
-                    view,
-                    actions
-                )
+                el('tr', {dataset: {zone: z.id}}, name, el('td', {}, mode), el('td', {}, prio), view, actions)
             );
         }
 
@@ -893,7 +872,6 @@
         state.cameras = s.cameras;
         state.zones = s.zones;
         state.settings = s.settings;
-        state.calId = null;
         if (!state.cameras.some((c) => c.id === state.cameraId)) {
             state.cameraId = state.cameras.length ? state.cameras[0].id : null;
             $('#cameraForm').id.readOnly = false;
@@ -906,38 +884,12 @@
     }
 
     // ---- Calibration
-    // The set being captured into: the camera's, or a zone's own override set.
-
-    function calSets() {
-        const c = camera();
-        if (!c || !c.calibrationId) return [];
-        return [
-            {id: c.calibrationId, label: `Camera ${c.name || c.id}`},
-            ...cameraZones()
-                .filter((z) => z.calibrationId)
-                .map((z) => ({id: z.calibrationId, label: `Zone ${zoneName(z)} (own)`}))
-        ];
-    }
+    // The set being captured into: the camera's, used by all its zones.
 
     function calTarget() {
-        const sets = calSets();
-        return sets.find((x) => x.id === state.calId) || sets[0] || null;
+        const c = camera();
+        return c && c.calibrationId ? {id: c.calibrationId} : null;
     }
-
-    function renderCalSets() {
-        const t = calTarget();
-        state.calId = t ? t.id : null;
-        fillSelect(
-            $('#calForm').set,
-            calSets().map((x) => [x.id, x.label]),
-            {selected: state.calId}
-        );
-    }
-
-    $('#calForm').set.addEventListener('change', (e) => {
-        state.calId = e.target.value;
-        renderCalibration();
-    });
 
     function renderWaypointSelect() {
         const f = $('#calForm');
@@ -1050,7 +1002,6 @@
     });
 
     async function renderCalibration() {
-        renderCalSets();
         const tbody = $('#samples tbody');
         const t = calTarget();
         $('#captureBtn').disabled = !t;

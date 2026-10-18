@@ -153,10 +153,6 @@
                 <h2>Calibration</h2>
                 <form id="calForm" class="stack">
                     <label
-                        >Calibration set
-                        <select name="set"></select>
-                    </label>
-                    <label
                         >Waypoint
                         <select name="waypoint"></select>
                     </label>
@@ -209,7 +205,6 @@
                                 <th>Region</th>
                                 <th>Mode</th>
                                 <th title="Priority: lower number wins when entering where zones overlap">Prio</th>
-                                <th title="Own calibration: use the zone's own set instead of the camera's">Own</th>
                                 <th>View</th>
                                 <th></th>
                             </tr>
@@ -226,7 +221,7 @@
                                         <option value="fixed">Fixed</option>
                                     </select>
                                 </td>
-                                <td colspan="3"></td>
+                                <td colspan="2"></td>
                                 <td><button type="button" id="zoneAddBtn">Add</button></td>
                             </tr>
                         </tfoot>

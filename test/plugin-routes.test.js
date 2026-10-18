@@ -119,13 +119,9 @@ test('zone, capture into the camera set, derived bearing/range, goto, geometry q
     assert.deepEqual(outside.body.zones, []);
     assert.equal((await call('GET', '/geometry?latitude=x')).status, 400);
 
-    // Override set for the zone.
-    const ov = await call('PUT', `/zones/${zoneId}`, {cameraId: 'apt', calibrationOverride: true});
-    assert.equal(ov.body.geometry.refName, 'Harbour');
-    assert.ok(ov.body.calibrationId && ov.body.calibrationId !== calId);
-    const ovCal = await call('GET', `/calibration/${ov.body.calibrationId}`);
-    assert.deepEqual(ovCal.body.owner, {type: 'zone', id: zoneId});
-    assert.equal(ovCal.body.samples.length, 0);
+    const upd = await call('PUT', `/zones/${zoneId}`, {cameraId: 'apt', priority: 4});
+    assert.equal(upd.body.geometry.refName, 'Harbour');
+    assert.equal('calibrationId' in upd.body, false, 'zones use the camera set');
 
     assert.equal((await call('DELETE', `/calibration/${calId}/${cap.body.id}`)).status, 200);
     assert.equal((await call('DELETE', '/cameras/apt')).status, 409);
