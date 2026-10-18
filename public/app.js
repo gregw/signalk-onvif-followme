@@ -921,12 +921,13 @@
                 return;
             }
             const o = r.outside || {};
-            const flags = [o.pan && 'pan extrapolated', o.tilt && 'tilt held', o.zoom && 'zoom held'].filter(Boolean);
+            const flags = [o.pan && 'pan', o.tilt && 'tilt', o.zoom && 'zoom'].filter(Boolean);
+            const from = r.neighbours && r.neighbours.length ? `  from ${r.neighbours.join(', ')}` : '';
             msg(
                 '#aimMsg',
                 `${w.name || id}: zone ${r.zone.name} (${r.zone.mode === 'fixed' ? 'fixed' : 'follow'})  ` +
-                    `pan ${fmtN(r.ptz.x)} tilt ${fmtN(r.ptz.y)} zoom ${fmtN(r.ptz.zoom)}  ${where}` +
-                    (flags.length ? `  (${flags.join(', ')}: outside the calibrated range)` : ''),
+                    `pan ${fmtN(r.ptz.x)} tilt ${fmtN(r.ptz.y)} zoom ${fmtN(r.ptz.zoom)}  ${where}${from}` +
+                    (flags.length ? `  (${flags.join(', ')} extrapolated beyond the nearest samples)` : ''),
                 flags.length ? 'bad' : 'ok'
             );
         } catch (err) {

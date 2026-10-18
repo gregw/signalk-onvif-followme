@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {buildCalibration, unwrapPan, wrapPan} = require('../lib/engine/calibration');
+const {buildCalibration, fitLine, unwrapPan, wrapPan} = require('../lib/engine/calibration');
 const {aimZone, aimOnce, AimError} = require('../lib/engine/aimer');
 const g = require('../lib/engine/geometry');
 
@@ -81,19 +81,75 @@ test('pan continuing through the camera +-1 seam', () => {
     assert.deepEqual(unwrapPan([0.9, 0.98, -0.95, -0.9]), [0.9, 0.98, 1.05, 1.1]);
 });
 
-test('outside the samples: pan extrapolates, tilt and zoom clamp, all flagged', () => {
+test('beyond the nearest samples every axis extrapolates and is flagged', () => {
     const cal = buildCalibration(
         CAM,
         [at(180, 500), at(200, 1000)].map((p) => sample(p))
     );
-    const t = at(220, 3000);
+    const t = at(220, 2500);
     const a = cal.aim(t);
-    near(a.x, trueCamera(t).x, 0.002, 'pan extrapolated');
-    near(a.zoom, trueCamera(at(200, 1000)).zoom, 1e-9, 'zoom clamped to the far sample');
+    const want = trueCamera(t);
+    near(a.x, want.x, 0.002, 'pan extrapolated');
+    near(a.y, want.y, 0.002, 'tilt extrapolated in depression');
+    near(a.zoom, want.zoom, 0.002, 'zoom extrapolated');
     assert.deepEqual(a.outside, {pan: true, tilt: true, zoom: true});
 });
 
-test('needs two bearings; equal bearings are averaged; zero height uses range for tilt', () => {
+test('least squares line: worked values', () => {
+    const pts = [
+        {x: 190, y: 0},
+        {x: 200, y: 0.06},
+        {x: 210, y: 0.1}
+    ];
+    // mean (200, 0.16 / 3); Sxy = 10 * 0.16 / 3 + 10 * (0.1 - 0.16 / 3) = 1; Sxx = 200.
+    const line = fitLine(pts);
+    near(line.slope, 0.005, 1e-12, 'slope');
+    near(line.at(205), 0.16 / 3 + 0.025, 1e-12, 'at 205');
+    assert.deepEqual([line.min, line.max], [190, 210]);
+    near(fitLine(pts, 0.01).at(200), 0.16 / 3, 1e-12, 'fixed slope keeps the mean');
+    near(fitLine([{x: 5, y: 0.3}]).at(9), 0.3, 1e-12, 'one point is flat');
+});
+
+test('only the 3 samples nearest the target count: a bad near sample stays local', () => {
+    // Far samples on the true camera, plus one 190 m out that is 0.012 pan (about 2 degrees) off,
+    // between them in bearing. The old bearing-order model interpolated through it for every
+    // target at bearings 211 to 228, at any range.
+    const far = [at(201, 6300), at(211, 2650), at(228, 3130), at(235, 1380)].map((p, i) => ({
+        ...sample(p),
+        name: `far${i}`
+    }));
+    const p = at(217.6, 190);
+    const t = trueCamera(p);
+    const bad = {...p, name: 'bad', ptz: {...t, x: t.x + 0.012}};
+    const cal = buildCalibration(CAM, [...far, bad]);
+
+    const boat = at(224, 2750);
+    const a = cal.aim(boat);
+    assert.deepEqual([...a.neighbours].sort(), ['far1', 'far2', 'far3']);
+    near(a.x, trueCamera(boat).x, 0.0005, 'far target unaffected by the bad sample');
+
+    const close = cal.aim(at(216, 220));
+    assert.ok(close.neighbours.includes('bad'), 'a target near it does use it');
+    assert.equal(buildCalibration(CAM, [...far, bad], {neighbours: 2}).aim(boat).neighbours.length, 2);
+});
+
+test('neighbours on one bearing keep the slope through all samples', () => {
+    // Three samples down one radial: their bearings cannot fix a pan slope.
+    const radial = [at(200, 1000), at(200, 1500), at(200, 2000)];
+    const wide = [at(150, 1500), at(250, 1500)];
+    const cal = buildCalibration(
+        CAM,
+        [...radial, ...wide].map((p) => sample(p))
+    );
+    const t = at(203, 1500);
+    const a = cal.aim(t);
+    near(a.x, trueCamera(t).x, 0.0005, 'pan from the global slope');
+    near(a.y, trueCamera(t).y, 0.002, 'tilt still local');
+    assert.equal(a.outside.pan, true);
+    assert.equal(a.outside.zoom, false);
+});
+
+test('needs two bearings; zero height uses range for tilt', () => {
     assert.throws(() => buildCalibration(CAM, [sample(at(180, 500))]), /at least 2/);
     assert.throws(() => buildCalibration(CAM, [sample(at(180, 500)), sample(at(180, 900))]), /at least 2/);
     const flat = {...CAM, height: 0};
