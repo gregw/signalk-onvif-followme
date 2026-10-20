@@ -1,6 +1,6 @@
 {
     "name": "signalk-onvif-followme",
-    "version": "0.2.1-dev.0",
+    "version": "0.2.1",
     "description": "Signal K plugin that makes a shore-mounted ONVIF pan-tilt-zoom webcam follow your boat while it is inside zones drawn in Freeboard.",
     "main": "index.js",
     "keywords": [
