@@ -2,6 +2,10 @@
 
 Notable changes to signalk-onvif-followme. Versions follow [semver](https://semver.org/); prereleases (`-dev.N`) are published under the npm `dev` tag.
 
+## Unreleased
+
+- README shows the plugin logo.
+
 ## 0.2.1 (2026-10-20)
 
 - New plugin icon: a yacht in an SLR focusing screen.

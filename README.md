@@ -1,5 +1,7 @@
 # signalk-onvif-followme
 
+<img src="https://raw.githubusercontent.com/gregw/signalk-onvif-followme/main/public/icon.svg" alt="ONVIF Follow Me logo: a yacht in an SLR focusing screen" width="128" align="right">
+
 A Signal K server plugin that turns a fixed pan-tilt-zoom webcam into a camera that follows one particular boat. The camera is mounted ashore (a balcony, a clubhouse, a headland) and speaks ONVIF; the boat is the Signal K server's own vessel, whose GPS position reaches the server as `navigation.position`. While that boat is inside one of the zones you draw on the chart in Freeboard, the plugin works out the bearing and range from the camera to the boat and steers the camera to keep it in view, panning as it sails past and zooming as it comes closer or moves away. When the boat leaves every zone the camera is released back to its own scan. A zone can instead hold one fixed wide view, for places where the boat is too close for smooth panning.
 
 The camera is calibrated by pointing it at a few waypoints and capturing where it was looking, so no measurements of the mount are needed. The original brief and the design decisions made since are in the [wiki](https://github.com/gregw/signalk-onvif-followme/wiki).
