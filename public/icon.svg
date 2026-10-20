@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>ONVIF Follow Me</title>
+  <defs>
+    <radialGradient id="screen" cx="50%" cy="48%" r="62%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#d9eefb"/>
+      <stop offset="1" stop-color="#7fc0ea"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Focusing screen with locating tab -->
+  <rect x="290" y="410" width="44" height="24" rx="4" fill="#9fd0f0" stroke="#2c5677" stroke-width="4"/>
+  <rect x="12" y="78" width="488" height="340" rx="20" fill="url(#screen)" stroke="#2c5677" stroke-width="5"/>
+
+  <g fill="none" stroke="#1d3c58" stroke-linecap="round">
+    <!-- Crosshair, stopping at the centre circle -->
+    <path d="M36 248H152M360 248H476M256 100V144M256 352V396" stroke-width="4"/>
+    <!-- Scale ticks -->
+    <path d="M144 237v22M368 237v22M130 242v12M382 242v12M116 242v12M396 242v12M102 242v12M410 242v12M88 237v22M424 237v22M74 242v12M438 242v12M60 242v12M452 242v12M46 242v12M466 242v12M245 136h22M245 360h22M250 122h12M250 374h12M250 108h12M250 388h12" stroke-width="3.5"/>
+    <!-- Grid marks -->
+    <path d="M42 112h20M52 102v20M450 112h20M460 102v20M42 384h20M52 374v20M450 384h20M460 374v20M156 96v16M356 96v16M156 384v16M356 384v16M32 180h16M32 316h16M464 180h16M464 316h16" stroke-width="3.5"/>
+    <!-- Centre focusing circles -->
+    <circle cx="256" cy="248" r="104" stroke-width="5"/>
+    <circle cx="256" cy="248" r="90" stroke-width="3.5"/>
+  </g>
+
+  <!-- Yacht -->
+  <g fill="#1d3c58">
+    <rect x="257" y="174" width="5" height="114" rx="2"/>
+    <path d="M267 178 Q294 232 323 282 L267 282 Z"/>
+    <path d="M252 190 L252 282 L206 282 Q226 236 252 190 Z"/>
+    <path d="M196 290 L328 290 Q320 312 294 317 L226 317 Q206 312 196 290 Z"/>
+  </g>
+  <path d="M214 326 q10.5 -7 21 0 t21 0 t21 0 t21 0" fill="none" stroke="#1f7fd0"
+        stroke-width="6" stroke-linecap="round"/>
+</svg>
