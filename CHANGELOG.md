@@ -5,6 +5,7 @@ Notable changes to signalk-onvif-followme. Versions follow [semver](https://semv
 ## Unreleased
 
 - README shows the plugin logo.
+- Calibration: aiming inside a triangle with a corner near the camera no longer extrapolates beyond its corners (zoom could go to 0, below all three).
 
 ## 0.2.1 (2026-10-20)
 

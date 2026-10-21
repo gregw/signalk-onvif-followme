@@ -272,3 +272,28 @@ test('aimer: fixed zone uses its view, followme uses calibration, outside is no 
         /have 1/
     );
 });
+
+test('a triangle with a corner near the camera stays within its corners', () => {
+    // The real fairlight, shore, fairchan samples (export of 2026-10-19), as bearing and range
+    // from a 30 m camera. In (bearing, range) the target is far outside this triangle, though it
+    // is inside on the chart: the view angle zoom weights were 1.015, 0.547, -0.563 and the zoom
+    // came out at 0, below every corner.
+    const named = (b, r, name, ptz) => ({...at(b, r), name, ptz});
+    const corners = [
+        named(315.0, 952, 'fairlight', {x: -0.5777, y: 0.856, zoom: 0.444}),
+        named(263.1, 66, 'shore', {x: -0.8789, y: 0.3792, zoom: 0.04}),
+        named(298.6, 1094, 'fairchan', {x: -0.6699, y: 0.8537, zoom: 0.9})
+    ];
+    const cal = buildCalibration(CAM, corners);
+    // Chart weights 0.025, 0.675, 0.3 on fairlight, shore, fairchan.
+    const chart = [0.025, 0.675, 0.3];
+    const mix = (f) => corners.reduce((s, c, i) => s + chart[i] * f(c), 0);
+    const t = {latitude: mix((c) => c.latitude), longitude: mix((c) => c.longitude)};
+    const a = cal.aim(t);
+    assert.deepEqual([...a.neighbours].sort(), ['fairchan', 'fairlight', 'shore']);
+    near(a.zoom, mix((c) => c.ptz.zoom), 0.01, 'zoom blended by chart weights');
+    for (const axis of ['x', 'y', 'zoom']) {
+        const vs = corners.map((c) => c.ptz[axis]);
+        assert.ok(a[axis] >= Math.min(...vs) - 1e-9 && a[axis] <= Math.max(...vs) + 1e-9, `${axis} ${a[axis]}`);
+    }
+});
