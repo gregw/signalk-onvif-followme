@@ -36,7 +36,7 @@ function ring(points) {
     return {type: 'Polygon', coordinates: [[...c, c[0]]]};
 }
 
-async function setup(t) {
+async function setup(t, opts = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'follow-'));
     t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
     let now = 1_000_000;
@@ -88,7 +88,7 @@ async function setup(t) {
             }
         }
     };
-    const follower = new Follower({app, store, cameras, now: clock, tickMs: TICK});
+    const follower = new Follower({app, store, cameras, now: clock, tickMs: TICK, ...opts});
     follower.start();
     t.after(() => follower.stop());
     const fix = (p, cog = null, sog = null) => {
@@ -238,4 +238,51 @@ test('bad deltas are ignored, never thrown', async (t) => {
     assert.equal(follower.fix, null);
     fix(at(200, 1000));
     assert.ok(follower.fix);
+});
+
+test('trace: one record per camera per tick while enabled, with the aim and what was sent', async (t) => {
+    let on = true;
+    const records = [];
+    const trace = {enabled: () => on, write: (r) => records.push(r)};
+    const {store, fix, run, moves} = await setup(t, {trace});
+    await run(2000);
+    assert.equal(records.length, 0, 'nothing while following is off');
+
+    await store.putSettings({followEnabled: true, leadS: 0, holdS: 0});
+    const p = at(200, 1000);
+    fix(p, rad(290), 5);
+    await run(TICK);
+    assert.equal(records.length, 1);
+    const r = records[0];
+    assert.equal(r.camera, 'c1');
+    assert.equal(r.reason, 'first');
+    assert.deepEqual(r.fix, {...p, ageS: 1});
+    assert.deepEqual(r.cog, {value: rad(290), ageS: 1});
+    assert.deepEqual(r.zone.name, 'Wedge');
+    assert.equal(r.pending, null);
+    assert.deepEqual(r.target, p, 'no lead');
+    assert.equal(r.aim.method, 'triangle');
+    assert.equal(r.aim.neighbours.length, 3);
+    assert.equal(r.aim.weights.view.length, 3);
+    assert.ok(Math.abs(r.aim.range - 1000) < 1);
+    assert.deepEqual(r.send, moves()[0]);
+    assert.equal(r.last, null);
+    assert.ok(!Number.isNaN(Date.parse(r.t)));
+
+    await run(TICK);
+    assert.equal(records[1].reason, 'deadband');
+    assert.equal(records[1].send, null);
+    assert.deepEqual(records[1].last, {...moves()[0], ageS: 1});
+
+    // Outside every zone: still a record, with no zone and no aim.
+    fix(at(90, 1000));
+    await run(TICK);
+    const out = records[2];
+    assert.equal(out.zone, null);
+    assert.equal(out.aim, undefined);
+    assert.equal(out.reason, 'outside all zones');
+
+    on = false;
+    await run(3000);
+    assert.equal(records.length, 3, 'nothing once disabled');
 });

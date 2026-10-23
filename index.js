@@ -52,7 +52,14 @@ module.exports = function (app, deps = {}) {
             lib: LIBS.includes(options.lib) ? options.lib : 'agsh',
             log
         });
-        const follower = new Follower({app, store, cameras, log, ...(deps.follower || {})});
+        // The admin UI's "Enable debug" for this plugin turns app.debug on at run time
+        // (signalk-server 2.34.0 dist/interfaces/plugins.js:509, app.logging.addDebug), and its
+        // `enabled` getter follows (debug 4.4.3 src/common.js): one aim record per tick then.
+        const trace = {
+            enabled: () => !!app.debug.enabled,
+            write: (record) => app.debug(`aim ${JSON.stringify(record)}`)
+        };
+        const follower = new Follower({app, store, cameras, log, trace, ...(deps.follower || {})});
         follower.start();
         ctx = {store, cameras, follower};
         const n = store.state.cameras.length;

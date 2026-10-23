@@ -53,6 +53,14 @@ node tools/ptz.js --host 192.0.2.64 snapshot snap.jpg
 
 Username and password are prompted for on the terminal (`--user` skips the username prompt). The probe writes `reports/<timestamp>/report.md`, `report.json` (with every raw SOAP response) and a snapshot per library. Exit code 2 means the camera failed the AbsoluteMove test (test 5), which the plugin depends on.
 
+## Debugging the aim
+
+Turn on "Enable debug" for the plugin (Server, Plugin Config). While following is on, each tick then logs one line per camera, `signalk-onvif-followme aim {...}`, with the fix, COG and SOG, the predicted target, the zone and any pending zone change, the aim (`method` triangle or nearest, `neighbours`, `weights`, `raw` unclamped and clamped PTZ, bearing and range) and the PTZ sent, if any. Angles are radians, distances metres. To keep a race's log:
+
+```sh
+journalctl -u signalk --since "2026-10-23 17:30" --until "2026-10-23 20:00" -o cat | grep ' aim {' > race.log
+```
+
 ## Adapter backends
 
 The plugin's one option, **ONVIF library**, picks the backend; the tools take it as `--lib`.

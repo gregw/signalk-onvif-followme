@@ -291,9 +291,36 @@ test('a triangle with a corner near the camera stays within its corners', () => 
     const t = {latitude: mix((c) => c.latitude), longitude: mix((c) => c.longitude)};
     const a = cal.aim(t);
     assert.deepEqual([...a.neighbours].sort(), ['fairchan', 'fairlight', 'shore']);
-    near(a.zoom, mix((c) => c.ptz.zoom), 0.01, 'zoom blended by chart weights');
+    near(
+        a.zoom,
+        mix((c) => c.ptz.zoom),
+        0.01,
+        'zoom blended by chart weights'
+    );
     for (const axis of ['x', 'y', 'zoom']) {
         const vs = corners.map((c) => c.ptz[axis]);
         assert.ok(a[axis] >= Math.min(...vs) - 1e-9 && a[axis] <= Math.max(...vs) + 1e-9, `${axis} ${a[axis]}`);
     }
+});
+
+test('the aim says how it was made: method, unclamped ptz, weights', () => {
+    const named = (b, r, name) => ({...sample(at(b, r)), name});
+    const cal = buildCalibration(CAM, [named(150, 500, 'A'), named(250, 500, 'B'), named(200, 2000, 'C')]);
+    const inside = cal.aim(at(200, 1000));
+    assert.equal(inside.method, 'triangle');
+    for (const k of ['chart', 'view', 'zoom']) {
+        assert.equal(inside.weights[k].length, 3);
+        near(
+            inside.weights[k].reduce((s, w) => s + w, 0),
+            1,
+            1e-9,
+            `${k} weights sum`
+        );
+    }
+    assert.equal(inside.raw.y, inside.y, 'tilt within range: unclamped is the same');
+
+    const outside = cal.aim(at(200, 20000));
+    assert.equal(outside.method, 'nearest');
+    assert.equal(outside.weights, null);
+    assert.ok(outside.raw.zoom > 1 && outside.zoom === 1, `zoom ${outside.raw.zoom} clamped to 1`);
 });

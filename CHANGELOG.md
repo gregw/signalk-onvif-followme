@@ -2,6 +2,10 @@
 
 Notable changes to signalk-onvif-followme. Versions follow [semver](https://semver.org/); prereleases (`-dev.N`) are published under the npm `dev` tag.
 
+## Unreleased
+
+- Debug log: with the plugin's "Enable debug" on, the follow loop logs one `aim` record per camera per tick: fix, COG, SOG, target, zone, the aim (method, neighbours, weights, unclamped and clamped PTZ) and what was sent.
+
 ## 0.2.2 (2026-10-21)
 
 - README shows the plugin logo.
