@@ -4,6 +4,7 @@ Notable changes to signalk-onvif-followme. Versions follow [semver](https://semv
 
 ## Unreleased
 
+- Calibration: pan and tilt inside a triangle always use the view angle weights again. 0.2.2 fell back to chart weights for them near the camera, which put pan up to 40 degrees off; only zoom falls back now.
 - Debug log: with the plugin's "Enable debug" on, the follow loop logs one `aim` record per camera per tick: fix, COG, SOG, target, zone, the aim (method, neighbours, weights, unclamped and clamped PTZ) and what was sent.
 
 ## 0.2.2 (2026-10-21)

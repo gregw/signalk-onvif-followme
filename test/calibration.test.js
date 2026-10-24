@@ -273,7 +273,7 @@ test('aimer: fixed zone uses its view, followme uses calibration, outside is no 
     );
 });
 
-test('a triangle with a corner near the camera stays within its corners', () => {
+test('a triangle with a corner near the camera keeps its zoom within its corners', () => {
     // The real fairlight, shore, fairchan samples (export of 2026-10-19), as bearing and range
     // from a 30 m camera. In (bearing, range) the target is far outside this triangle, though it
     // is inside on the chart: the view angle zoom weights were 1.015, 0.547, -0.563 and the zoom
@@ -297,9 +297,31 @@ test('a triangle with a corner near the camera stays within its corners', () => 
         0.01,
         'zoom blended by chart weights'
     );
-    for (const axis of ['x', 'y', 'zoom']) {
-        const vs = corners.map((c) => c.ptz[axis]);
-        assert.ok(a[axis] >= Math.min(...vs) - 1e-9 && a[axis] <= Math.max(...vs) + 1e-9, `${axis} ${a[axis]}`);
+    const zooms = corners.map((c) => c.ptz.zoom);
+    assert.ok(a.zoom >= Math.min(...zooms) && a.zoom <= Math.max(...zooms), `zoom ${a.zoom}`);
+});
+
+test('pan and tilt stay exact in a triangle with a corner near the camera', () => {
+    // The live fairlight, smedleys, marina geometry (2026-10-24) on the linear camera. Its view
+    // weights are far from the chart ones near the camera; 0.2.2 fell back to the chart weights
+    // for pan and tilt there and was 42 degrees off at 293.6 degrees, 346 m.
+    const named = (b, r, name) => ({...sample(at(b, r)), name});
+    const cal = buildCalibration(CAM, [
+        named(315.0, 952, 'fairlight'),
+        named(215.7, 194, 'smedleys'),
+        named(299.3, 1568, 'marina')
+    ]);
+    for (const [b, r] of [
+        [293.6, 346],
+        [260, 250],
+        [300, 900]
+    ]) {
+        const t = at(b, r);
+        const a = cal.aim(t);
+        assert.equal(a.method, 'triangle', `${b} ${r}`);
+        const want = trueCamera(t);
+        near(a.x, want.x, 1e-6, `pan at ${b} ${r}`);
+        near(a.y, want.y, 1e-6, `tilt at ${b} ${r}`);
     }
 });
 
