@@ -24,9 +24,9 @@ npm install signalk-onvif-followme
 
 Restart the server, enable the plugin, then open the webapp. In outline:
 
-1. **Camera:** connection details and the camera's position and height, set from a waypoint.
+1. **Camera:** connection details and the camera's position and height, set from a waypoint. **New camera** adds another; the picker in the header then chooses which one the page shows.
 2. **Calibration:** pick a waypoint, centre it under the cross hairs, Capture. Repeat around the area the boat uses. **Test** aims as if the boat were at a waypoint and names the samples it used. Inside the calibrated area the aim is interpolated in the smallest triangle of samples around the target; outside, it is fitted from the 3 nearest. Landmarks whose charted position you trust beat chart symbols, and far landmarks forgive a few metres of error that near ones do not.
-3. **Zones:** draw regions in Freeboard, then add each as a Follow or Fixed zone.
+3. **Zones:** draw regions in Freeboard, then add each to a camera. A zone's mode is **Deadband** (move when the aim drifts past a deadband; the original), **Paced** (a move every second at the speed that keeps up with the boat, for smooth panning) or **Fixed** (one stored view). The gear button beside a follow zone opens its motion settings; blank fields use the defaults.
 4. **Follow:** switch on, and watch it in **Follow live**.
 
 ## Camera tools

@@ -6,6 +6,9 @@ Notable changes to signalk-onvif-followme. Versions follow [semver](https://semv
 
 - Camera tools: `tools/motion-probe.js` measures how the camera moves (ContinuousMove speed curves, resend and speed change smoothness, zoom during pan, AbsoluteMove speed and chaining).
 - agsh backend: a ContinuousMove that omits pan/tilt or zoom leaves it out of the request instead of sending 0.
+- Follow: each follow zone chooses its motion. Deadband is the original loop, now with optional per-zone parameters. Paced moves with the boat every second, each axis at the speed that keeps up, so the camera pans smoothly instead of pan, pause, pan. Speeds come from a per-camera speed table, defaulting to the motion probe's measurements.
+- Webapp: several cameras. A camera picker, New camera and Delete camera, and a Camera column on zones; the same region can have a zone on each camera.
+- Webapp: the zone's Mode select is Deadband, Paced or Fixed, with a gear button for a follow zone's motion settings. Follow tuning is now Follow defaults.
 
 ## 0.3.0 (2026-10-24)
 
