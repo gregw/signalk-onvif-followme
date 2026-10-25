@@ -104,7 +104,7 @@ test('configure camera, live view, jog, zone, calibrate by waypoint', async () =
     await page.click('#zoneAddBtn');
     await page.locator('#zoneMsg', {hasText: 'Added Harbour'}).waitFor();
     const zrow = page.locator('#zones tbody tr', {hasText: 'Harbour'});
-    assert.equal(await zrow.locator('[aria-label=mode]').inputValue(), 'followme');
+    assert.equal(await zrow.locator('[aria-label=mode]').inputValue(), 'deadband');
     assert.equal(await zrow.locator('[aria-label=priority]').inputValue(), '1');
     // Harbour is used, so the add row no longer offers it.
     assert.equal(await page.locator('#zoneAdd [name=region] option', {hasText: 'Harbour'}).count(), 0);
@@ -380,7 +380,7 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         // Region edited in Freeboard: Update is highlighted after a reload, other zone edits do
         // not touch the stored polygon, Update copies the new polygon and name.
         const zrow = page.locator('#zones tbody tr').first();
-        const upd = zrow.locator('button', {hasText: 'Update'});
+        const upd = zrow.locator('button[aria-label="update from region"]');
         assert.equal(await upd.getAttribute('class'), '');
         const rg = resources.regions['rg-harbour'];
         const oldPolygon = JSON.parse(JSON.stringify(rg.feature.geometry));
@@ -394,7 +394,7 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         let zs = (await (await fetch(fresh.api + '/state')).json()).zones;
         assert.deepEqual(zs[0].geometry.polygon, oldPolygon, 'priority edit kept the stored polygon');
         assert.equal(zs[0].priority, 3);
-        await zrow.locator('button', {hasText: 'Update'}).click();
+        await upd.click();
         await page.locator('#zoneMsg', {hasText: 'Updated Harbour West from its region'}).waitFor();
         zs = (await (await fetch(fresh.api + '/state')).json()).zones;
         assert.equal(zs[0].geometry.refName, 'Harbour West');
@@ -402,13 +402,13 @@ test('test aim at any waypoint, re-read each time it is tested; capture re-reads
         assert.equal(zs[0].priority, 3);
         await page.locator('#zones tbody tr', {hasText: 'Harbour West'}).waitFor();
         assert.equal(await page.locator('#zones tbody tr button.stale').count(), 0);
-        await page.locator('#zones tbody tr button', {hasText: 'Update'}).click();
+        await page.locator('#zones tbody tr button[aria-label="update from region"]').click();
         await page.locator('#zoneMsg', {hasText: 'already matches its region'}).waitFor();
         // Region deleted: no Update button, the zone keeps its copy.
         delete resources.regions['rg-harbour'];
         await page.click('#refreshWpBtn');
         await page.locator('#zones tbody tr', {hasText: 'Harbour West (region deleted)'}).waitFor();
-        assert.equal(await page.locator('#zones tbody tr button', {hasText: 'Update'}).count(), 0);
+        assert.equal(await page.locator('#zones tbody tr button[aria-label="update from region"]').count(), 0);
         resources.regions['rg-harbour'] = rg;
         await page.click('#refreshWpBtn');
 
@@ -507,12 +507,12 @@ test('follow: switch on, boat enters a zone, camera aims, manual jog pauses, res
         fresh.boat(-27.404, 153.205);
         await page.locator('#liveHeadline', {hasText: 'In Harbour: following the boat'}).waitFor();
         await page.locator('#lvIn', {hasText: 'Harbour (p1)'}).waitFor();
-        await page.locator('#lvZone', {hasText: 'Harbour (follow, p1)'}).waitFor();
+        await page.locator('#lvZone', {hasText: 'Harbour (follow, deadband, p1)'}).waitFor();
         await page.locator('#lvLast', {hasText: 's ago'}).waitFor();
         if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'live.png')});
         await page.click('#liveClose');
 
-        await page.locator('#followStatus', {hasText: 'following Harbour (follow)'}).waitFor();
+        await page.locator('#followStatus', {hasText: 'following Harbour (follow, deadband)'}).waitFor();
         await page.waitForFunction(() => document.querySelector('#zones tbody tr.active'));
         const cam = () => fresh.cameras[fresh.cameras.length - 1].adapter;
         const moved = () => cam().calls.filter((c) => c[0] === 'absoluteMove').length;
@@ -610,6 +610,153 @@ test('more than 10 calibration samples scroll, with the header in view', async (
         await page.locator('#samplesWrap').evaluate((w) => (w.scrollTop = w.scrollHeight));
         const head = await box(page.locator('#samples thead th').first());
         near(head.top, wrap.top, 2, 'header stays at the top');
+        assert.deepEqual(errors, []);
+    } finally {
+        await ctx.close();
+        await fresh.close();
+    }
+});
+
+test('two cameras: add, switch, a zone each, motion editor, paced follow, delete', async () => {
+    const fresh = await startDevServer();
+    const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
+    try {
+        const page = await ctx.newPage();
+        const errors = [];
+        page.on('pageerror', (e) => errors.push(e.message));
+        page.on('dialog', (d) => d.accept());
+        const call = (method, p, b) =>
+            fetch(fresh.api + p, {
+                method,
+                headers: {'Content-Type': 'application/json'},
+                body: b === undefined ? undefined : JSON.stringify(b)
+            }).then((r) => r.json());
+        const state = () => call('GET', '/state');
+        const adapterFor = (host) => {
+            const a = fresh.cameras
+                .map((c) => c.adapter)
+                .filter((x) => x.calls.some((c) => c[0] === 'connect' && c[1] === host));
+            return a[a.length - 1];
+        };
+
+        // One camera, calibrated, with a Harbour zone (as in the follow test).
+        await call('PUT', '/cameras/cam', {
+            name: 'Apartment',
+            conn: {hostname: 'h1'},
+            pose: {position: {latitude: -27.4, longitude: 153.19, height: 30}}
+        });
+        const calId = (await state()).cameras[0].calibrationId;
+        const R = DEFAULT_RESOURCES.regions['rg-harbour'];
+        const harbour = {ref: 'rg-harbour', refName: 'Harbour', polygon: R.feature.geometry};
+        const z1 = await call('POST', '/zones', {cameraId: 'cam', geometry: harbour});
+        for (const [lat, lon, x] of [
+            [-27.398, 153.2, 0.1],
+            [-27.41, 153.21, 0.4]
+        ]) {
+            await call('POST', '/camera/cam/move', {mode: 'absolute', x, y: -0.2, zoom: 0.3});
+            await new Promise((r) => setTimeout(r, 600));
+            await call('POST', `/calibration/${calId}`, {latitude: lat, longitude: lon});
+        }
+        await call('POST', '/follow/cam/resume', {});
+
+        await page.goto(fresh.url);
+        await page.locator('#conn', {hasText: 'camera connected'}).waitFor();
+        assert.equal(await page.locator('#cameraPick').isVisible(), false, 'no picker for one camera');
+
+        // Add a second camera from the form.
+        await page.click('#cameraDetails summary');
+        await page.click('#newCameraBtn');
+        const cf = page.locator('#cameraForm');
+        assert.equal(await cf.locator('[name=id]').inputValue(), 'camera2');
+        assert.equal(await cf.locator('[name=hostname]').inputValue(), '');
+        await cf.locator('[name=name]').fill('Roof');
+        await cf.locator('[name=hostname]').fill('h2');
+        await cf.locator('[name=poseWaypoint]').selectOption({label: 'Camera'});
+        await page.click('text=Save camera');
+        await page.locator('#cameraMsg', {hasText: 'Saved'}).waitFor();
+        await page.locator('#cameraPick').waitFor({state: 'visible'});
+        assert.equal(await page.locator('#cameraSelect').inputValue(), 'camera2');
+        await page.locator('#cameraSummary', {hasText: 'Camera: Roof  h2:80'}).waitFor();
+        await page.locator('#cameraSummary', {hasText: '(2 of 2 cameras)'}).waitFor();
+        await page.waitForFunction(() => (document.querySelector('#view img') || {}).src?.includes('/camera/camera2/'));
+
+        // Switch back: view, form and summary follow the picker.
+        await page.selectOption('#cameraSelect', 'cam');
+        await page.locator('#cameraSummary', {hasText: 'Camera: Apartment  h1:80'}).waitFor();
+        await page.waitForFunction(() => document.querySelector('#view img').src.includes('/camera/cam/'));
+        assert.equal(await cf.locator('[name=hostname]').inputValue(), 'h1');
+
+        // Zones: Harbour on cam; the add row for Roof still offers Harbour; add it there too.
+        const row1 = page.locator(`#zones tr[data-zone="${z1.id}"]`);
+        assert.equal(await row1.locator('select[aria-label=camera]').inputValue(), 'cam');
+        await page.selectOption('#zoneAdd [name=camera]', 'camera2');
+        await page.selectOption('#zoneAdd [name=region]', 'rg-harbour');
+        await page.click('#zoneAddBtn');
+        await page.locator('#zoneMsg', {hasText: 'Added Harbour'}).waitFor();
+        const z2 = (await state()).zones.find((z) => z.cameraId === 'camera2');
+        assert.equal(z2.geometry.ref, 'rg-harbour');
+        assert.equal(await page.locator('#zones tbody tr[data-zone]').count(), 2);
+        // Moving Roof's Harbour zone onto cam clashes with cam's own.
+        await page.locator(`#zones tr[data-zone="${z2.id}"] select[aria-label=camera]`).selectOption('cam');
+        await page.locator('#zoneMsg', {hasText: 'already has a zone for region Harbour'}).waitFor();
+        assert.equal((await state()).zones.find((z) => z.id === z2.id).cameraId, 'camera2', 'unchanged');
+
+        // Motion: cam's Harbour to paced, then a lookahead of 3 s from the settings row.
+        await row1.locator('select[aria-label=mode]').selectOption('paced');
+        await page.locator('#zoneMsg', {hasText: 'Saved Harbour'}).waitFor();
+        assert.deepEqual((await state()).zones.find((z) => z.id === z1.id).mode.motion, {type: 'paced'});
+        await page.locator(`#zones tr[data-zone="${z1.id}"] button.gear`).click();
+        const params = page.locator(`#zones tr[data-motion-for="${z1.id}"]`);
+        await params.waitFor();
+        assert.equal(await params.locator('[name=lookaheadS]').getAttribute('placeholder'), '2');
+        assert.equal(await params.locator('[name=panDeadband]').count(), 0, 'paced has no deadbands');
+        await params.locator('[name=lookaheadS]').fill('3');
+        await params.locator('[name=lookaheadS]').press('Enter');
+        await page.locator('#zoneMsg', {hasText: 'Saved motion for Harbour'}).waitFor();
+        assert.deepEqual((await state()).zones.find((z) => z.id === z1.id).mode.motion, {type: 'paced', lookaheadS: 3});
+        await page.locator(`#zones tr[data-motion-for="${z1.id}"]`).waitFor();
+        assert.equal(await page.locator(`#zones tr[data-motion-for="${z1.id}"] [name=lookaheadS]`).inputValue(), '3');
+        if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'two-cameras.png'), fullPage: true});
+
+        // Phone width with the motion row open: no horizontal scroll.
+        await page.setViewportSize({width: 390, height: 844});
+        const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        assert.ok(over <= 0, `page overflows by ${over}px`);
+        if (SHOT_DIR) await page.screenshot({path: path.join(SHOT_DIR, 'two-cameras-phone.png'), fullPage: true});
+        await page.setViewportSize({width: 1280, height: 900});
+
+        // Paced follow on cam: a move with a speed per axis every tick.
+        await call('PUT', '/settings', {holdS: 0, followEnabled: true});
+        const timer = setInterval(() => fresh.boat(-27.404, 153.205), 500);
+        try {
+            await page
+                .locator('#followStatus', {hasText: 'Follow Apartment: following Harbour (follow, paced)'})
+                .waitFor();
+            const paced = () => adapterFor('h1').calls.filter((c) => c[0] === 'absoluteMove' && c[2]);
+            for (let i = 0; i < 40 && paced().length < 2; i++) await new Promise((r) => setTimeout(r, 100));
+            assert.ok(paced().length >= 2, 'paced moves');
+            const sp = paced().at(-1)[2];
+            assert.ok(sp.x > 0 && sp.y > 0 && sp.zoom === 1, `speed ${JSON.stringify(sp)}`);
+        } finally {
+            clearInterval(timer);
+            await call('PUT', '/settings', {followEnabled: false});
+        }
+
+        // Delete Roof: refused while it has a zone, then done.
+        await page.selectOption('#cameraSelect', 'camera2');
+        await page.locator('#cameraSummary', {hasText: 'Camera: Roof'}).waitFor();
+        await page.click('#deleteCameraBtn');
+        await page.locator('#cameraMsg', {hasText: 'move or delete its zones first'}).waitFor();
+        await page.locator(`#zones tr[data-zone="${z2.id}"] button.del`).click();
+        await page.locator(`#zones tr[data-zone="${z2.id}"]`).waitFor({state: 'detached'});
+        await page.click('#deleteCameraBtn');
+        await page.locator('#cameraMsg', {hasText: 'Deleted Roof'}).waitFor();
+        await page.locator('#cameraPick').waitFor({state: 'hidden'});
+        await page.locator('#cameraSummary', {hasText: 'Camera: Apartment'}).waitFor();
+        assert.deepEqual(
+            (await state()).cameras.map((c) => c.id),
+            ['cam']
+        );
         assert.deepEqual(errors, []);
     } finally {
         await ctx.close();

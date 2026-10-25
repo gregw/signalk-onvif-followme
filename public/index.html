@@ -10,6 +10,10 @@
     <body>
         <header>
             <h1>ONVIF Follow Me</h1>
+            <label id="cameraPick" class="camera-pick" hidden
+                >Camera
+                <select id="cameraSelect" aria-label="camera shown"></select
+            ></label>
             <span id="conn" class="pill">loading</span>
             <label class="switch" title="Aim the camera at this vessel while it is in a zone">
                 <input id="followToggle" type="checkbox" /> Follow
@@ -205,9 +209,13 @@
                         <thead>
                             <tr>
                                 <th>Region</th>
-                                <th>Mode</th>
+                                <th class="cam-col">Camera</th>
+                                <th
+                                    title="Deadband and Paced follow the boat: Deadband moves when the aim drifts past a deadband, Paced moves with the boat every second. Fixed holds one stored view"
+                                >
+                                    Mode
+                                </th>
                                 <th title="Priority: lower number wins when entering where zones overlap">Prio</th>
-                                <th>View</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -217,13 +225,17 @@
                                 <td>
                                     <select name="region" aria-label="region for new zone"></select>
                                 </td>
+                                <td class="cam-col">
+                                    <select name="camera" aria-label="camera for new zone"></select>
+                                </td>
                                 <td>
                                     <select name="mode" aria-label="mode for new zone">
-                                        <option value="followme">Follow</option>
+                                        <option value="deadband">Deadband</option>
+                                        <option value="paced">Paced</option>
                                         <option value="fixed">Fixed</option>
                                     </select>
                                 </td>
-                                <td colspan="2"></td>
+                                <td></td>
                                 <td><button type="button" id="zoneAddBtn">Add</button></td>
                             </tr>
                         </tfoot>
@@ -257,7 +269,11 @@
 
             <section id="tuningPanel" class="panel">
                 <details id="tuningDetails">
-                    <summary>Follow tuning</summary>
+                    <summary>Follow defaults</summary>
+                    <p class="hint small">
+                        Deadband zones use these unless they set their own in the zone's motion settings. Paced zones
+                        use only Stale after.
+                    </p>
                     <form id="tuningForm" class="grid">
                         <label title="Aim where the boat will be this far ahead, from COG and SOG"
                             >Lead, s <input name="leadS" type="number" min="0" max="30" step="any"
@@ -319,6 +335,11 @@
                         <div class="row">
                             <button type="submit">Save camera</button>
                             <button type="button" id="testBtn">Test connection</button>
+                            <span class="spacer"></span>
+                            <button type="button" id="newCameraBtn" title="Add another camera">New camera</button>
+                            <button type="button" id="deleteCameraBtn" class="del" title="Delete this camera">
+                                Delete camera
+                            </button>
                         </div>
                     </form>
                     <div id="cameraMsg" class="msg"></div>

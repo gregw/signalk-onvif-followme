@@ -30,8 +30,12 @@
         waypoints: {},
         regions: {},
         samples: [],
-        cameraId: null
+        cameraId: null,
+        // Paced defaults and deadband parameter names, from GET /state (engine/motion.js).
+        motionDefaults: {paced: {}, deadband: []}
     };
+    // Editing a camera not saved yet (New camera): the form is blank and its id editable.
+    let newCamera = false;
 
     // ---- HTTP
 
@@ -333,19 +337,72 @@
     function camera() {
         return state.cameras.find((c) => c.id === state.cameraId) || null;
     }
+    const cameraName = (id) => {
+        const c = state.cameras.find((x) => x.id === id);
+        return c ? c.name || c.id : id;
+    };
+
+    // The camera shown (view, jog, calibration, live status). Remembered per browser.
+    const CAMERA_KEY = 'onvif-followme.camera';
+
+    function renderCameraPick() {
+        fillSelect(
+            '#cameraSelect',
+            state.cameras.map((c) => [c.id, c.name || c.id]),
+            {selected: state.cameraId}
+        );
+        $('#cameraPick').hidden = state.cameras.length < 2;
+    }
+
+    function selectCamera(id) {
+        endJog();
+        state.cameraId = id;
+        newCamera = false;
+        try {
+            if (id) localStorage.setItem(CAMERA_KEY, id);
+        } catch {
+            // not remembered; fine
+        }
+        lastStatus = null;
+        $('#status').textContent = 'pan - tilt - zoom -';
+        view.setCamera(id);
+        renderCameraPick();
+        renderCamera();
+        renderZones();
+        renderCalibration();
+        updateWpInfo();
+        pollStatus();
+        pollFollow();
+    }
+
+    $('#cameraSelect').addEventListener('change', (e) => selectCamera(e.target.value));
+
+    /** First camera id of the form cameraN not taken. */
+    function freeCameraId() {
+        for (let n = state.cameras.length + 1; ; n++) {
+            if (!state.cameras.some((c) => c.id === `camera${n}`)) return `camera${n}`;
+        }
+    }
 
     function renderCamera() {
         const f = $('#cameraForm');
-        const c = camera();
+        const c = newCamera ? null : camera();
         fillSelect(
             f.poseWaypoint,
             byName(state.waypoints).map(([id, w]) => [id, w.name || id]),
             {blank: '(type below)', selected: c && c.pose.waypointId}
         );
         renderCameraSummary();
+        $('#deleteCameraBtn').disabled = !c;
+        $('#newCameraBtn').disabled = newCamera || !state.cameras.length;
         if (!c) {
             $('#cameraDetails').open = true;
             f.password.placeholder = '';
+            if (newCamera) {
+                f.reset();
+                f.id.value = freeCameraId();
+            }
+            f.id.readOnly = false;
             return;
         }
         f.id.value = c.id;
@@ -362,13 +419,16 @@
         f.height.value = p ? p.height : 0;
     }
 
-    function renderCameraSummary(status) {
+    function renderCameraSummary() {
+        if (newCamera) return ($('#cameraSummary').textContent = 'Camera: new');
         const c = camera();
         if (!c) return ($('#cameraSummary').textContent = 'Camera: not configured');
         const p = c.pose.position;
         const where = p ? `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}, ${p.height} m` : 'position not set';
+        const n = state.cameras.length;
+        const which = n > 1 ? `  (${state.cameras.indexOf(c) + 1} of ${n} cameras)` : '';
         $('#cameraSummary').textContent =
-            `Camera: ${c.name || c.id}  ${c.conn.hostname}:${c.conn.port}  ${where}` + (status ? `  ${status}` : '');
+            `Camera: ${c.name || c.id}  ${c.conn.hostname}:${c.conn.port}  ${where}${which}`;
     }
 
     $('#cameraForm').poseWaypoint.addEventListener('change', (e) => {
@@ -407,12 +467,13 @@
         const id = f.id.value.trim();
         const saved = await api('PUT', `/cameras/${encodeURIComponent(id)}`, cameraBody(f));
         const i = state.cameras.findIndex((c) => c.id === id);
+        if (newCamera && i >= 0) throw new Error(`There is already a camera ${id}: choose another id.`);
         if (i >= 0) state.cameras[i] = saved;
         else state.cameras.push(saved);
-        const first = !state.cameraId;
-        state.cameraId = id;
-        renderCamera();
-        if (first) view.setCamera(id);
+        if (id === state.cameraId && !newCamera) {
+            renderCameraPick();
+            renderCamera();
+        } else selectCamera(id);
         return saved;
     }
 
@@ -428,10 +489,34 @@
         }
     });
 
+    $('#newCameraBtn').addEventListener('click', () => {
+        endJog();
+        newCamera = true;
+        renderCamera();
+        msg('#cameraMsg', 'New camera: fill in its details and Save.');
+    });
+
+    $('#deleteCameraBtn').addEventListener('click', async () => {
+        const c = camera();
+        if (!c || !confirm(`Delete camera "${c.name || c.id}" and its calibration?`)) return;
+        try {
+            await api('DELETE', `/cameras/${encodeURIComponent(c.id)}`);
+        } catch (err) {
+            return msg(
+                '#cameraMsg',
+                err.status === 409 ? `${err.message}: move or delete its zones first.` : err.message,
+                'bad'
+            );
+        }
+        state.cameras = state.cameras.filter((x) => x.id !== c.id);
+        msg('#cameraMsg', `Deleted ${c.name || c.id}.`, 'ok');
+        selectCamera(state.cameras.length ? state.cameras[0].id : null);
+    });
+
     $('#testBtn').addEventListener('click', async () => {
         msg('#cameraMsg', 'Connecting...');
         try {
-            if (!state.cameraId) await saveCamera();
+            if (!state.cameraId || newCamera) await saveCamera();
             const t = await api('POST', `/cameras/${encodeURIComponent(state.cameraId)}/test`);
             const d = t.device;
             msg(
@@ -449,8 +534,12 @@
     /** A zone is named by its region (name snapshotted when the region was assigned). */
     const zoneName = (z) => (z && z.geometry && z.geometry.refName) || '(no region)';
     const fmtPtz = (v) => (v ? `${fmtN(v.x)}, ${fmtN(v.y)}, ${fmtN(v.zoom)}` : 'not set');
-    const cameraZones = () =>
-        state.zones.filter((z) => z.cameraId === state.cameraId).sort((a, b) => a.priority - b.priority);
+    /** All zones, by camera (in camera order) then priority. */
+    const cameraOrder = (id) => state.cameras.findIndex((c) => c.id === id);
+    const allZones = () =>
+        [...state.zones].sort((a, b) => cameraOrder(a.cameraId) - cameraOrder(b.cameraId) || a.priority - b.priority);
+    // Zones whose motion settings row is open, kept across re-renders.
+    const motionOpen = new Set();
 
     /** Create an element: `dataset` and hyphenated keys (aria-*) become attributes, the rest properties. */
     function el(tag, props = {}, ...kids) {
@@ -499,34 +588,117 @@
         polygon: r.feature.geometry
     });
 
+    const COLS = 5;
+
+    /** Mode select value: 'fixed', or a follow zone's motion type. */
+    const modeValue = (z) => (z.mode.type === 'fixed' ? 'fixed' : (z.mode.motion && z.mode.motion.type) || 'deadband');
+    /** Zone mode body for a mode select value. Changing motion type starts from its defaults. */
+    const modeBody = (v) =>
+        v === 'fixed' ? {type: 'fixed'} : {type: 'followme', motion: v === 'deadband' ? null : {type: v}};
+    function modeSelect(label) {
+        const sel = el('select', {'aria-label': label});
+        sel.append(new Option('Deadband', 'deadband'), new Option('Paced', 'paced'), new Option('Fixed', 'fixed'));
+        return sel;
+    }
+
+    const PACED_FIELDS = [
+        ['lookaheadS', 'Look ahead, s', 'Aim this far ahead and set each speed to get there in this time'],
+        ['maxSpeed', 'Max speed', 'Fastest speed (0..1) used to catch up'],
+        ['zoomDeadband', 'Zoom deadband', 'Zoom changes smaller than this are held, to avoid zoom and focus hunting'],
+        ['zoomSpeed', 'Zoom speed', 'Speed (0..1) for zoom changes']
+    ];
+    const DEADBAND_FIELDS = [
+        ['leadS', 'Lead, s', 'Aim where the boat will be this far ahead'],
+        ['minIntervalS', 'Min interval, s', 'Minimum time between camera moves'],
+        ['panDeadband', 'Pan deadband', 'Pan changes smaller than this are not sent (1 unit is about 180 degrees)'],
+        ['tiltDeadband', 'Tilt deadband', 'Tilt changes smaller than this are not sent'],
+        ['zoomDeadband', 'Zoom deadband', 'Zoom changes smaller than this are held'],
+        ['speed', 'Move speed', 'AbsoluteMove speed 0..1']
+    ];
+
+    /** A follow zone's motion parameters: blank fields take the default, shown greyed in. */
+    function motionRow(z) {
+        const motion = z.mode.motion || {type: 'deadband'};
+        const paced = motion.type === 'paced';
+        const fields = paced ? PACED_FIELDS : DEADBAND_FIELDS;
+        const dflt = (k) => {
+            const v = paced ? state.motionDefaults.paced[k] : state.settings[k];
+            return v === null || v === undefined ? 'camera' : String(v);
+        };
+        const box = el('div', {className: 'motion-params'});
+        const inputs = {};
+        for (const [k, label, title] of fields) {
+            const input = el('input', {
+                type: 'number',
+                step: 'any',
+                name: k,
+                placeholder: dflt(k),
+                className: 'narrow'
+            });
+            input.value = motion[k] === undefined || motion[k] === null ? '' : motion[k];
+            input.onchange = () => {
+                const m = {type: motion.type};
+                for (const [key, i] of Object.entries(inputs)) if (i.value !== '') m[key] = Number(i.value);
+                saveZone(z, {mode: {type: 'followme', motion: m}}, `Saved motion for ${zoneName(z)}.`);
+            };
+            inputs[k] = input;
+            box.append(el('label', {title}, `${label} `, input));
+        }
+        box.append(
+            el('span', {
+                className: 'hint small',
+                textContent: paced
+                    ? 'Paced: a move every second, at the speed that keeps up with the boat.'
+                    : 'Deadband: a move when the aim drifts past a deadband. Blank uses Follow defaults.'
+            })
+        );
+        return el('tr', {className: 'motion-row', dataset: {motionFor: z.id}}, el('td', {colSpan: COLS}, box));
+    }
+
     function renderZones() {
         const tbody = $('#zones tbody');
         tbody.innerHTML = '';
-        const zones = cameraZones();
-        if (!state.cameraId)
-            tbody.append(el('tr', {}, el('td', {colSpan: 6, className: 'hint', textContent: 'Save a camera first.'})));
+        // One camera: no camera column.
+        $('#zones').classList.toggle('one-camera', state.cameras.length < 2);
+        const zones = allZones();
+        if (!state.cameras.length)
+            tbody.append(
+                el('tr', {}, el('td', {colSpan: COLS, className: 'hint', textContent: 'Save a camera first.'}))
+            );
         else if (!zones.length)
-            tbody.append(el('tr', {}, el('td', {colSpan: 6, className: 'hint', textContent: 'No zones yet.'})));
+            tbody.append(el('tr', {}, el('td', {colSpan: COLS, className: 'hint', textContent: 'No zones yet.'})));
         for (const z of zones) {
             const gone = !state.regions[z.geometry.ref];
             const name = el('td', {textContent: zoneName(z) + (gone ? ' (region deleted)' : '')});
 
-            const mode = el('select', {'aria-label': 'mode'});
-            mode.append(new Option('Follow', 'followme'), new Option('Fixed', 'fixed'));
-            mode.value = z.mode.type;
-            mode.onchange = () => saveZone(z, {mode: {type: mode.value}});
+            const cam = el('select', {'aria-label': 'camera'});
+            for (const c of state.cameras) cam.append(new Option(c.name || c.id, c.id));
+            cam.value = z.cameraId;
+            cam.onchange = () => saveZone(z, {cameraId: cam.value});
 
-            const prio = el('input', {
-                type: 'number',
-                step: 1,
-                value: z.priority,
-                className: 'narrow',
-                'aria-label': 'priority'
-            });
-            prio.onchange = () => saveZone(z, {priority: Number(prio.value)});
-
-            const view = el('td', {className: 'view-cell'});
-            if (z.mode.type === 'fixed') {
+            // Mode and motion in one select; beside it the mode's own controls: motion settings
+            // for a follow zone, the stored view for a fixed one.
+            const mode = modeSelect('mode');
+            mode.value = modeValue(z);
+            mode.onchange = () => saveZone(z, {mode: modeBody(mode.value)});
+            const modeCell = el('td', {className: 'mode-cell'}, mode);
+            if (z.mode.type === 'followme') {
+                const open = motionOpen.has(z.id);
+                const gear = el('button', {
+                    type: 'button',
+                    textContent: '\u2699',
+                    title: 'Motion settings',
+                    className: 'gear' + (open ? ' on' : ''),
+                    'aria-label': 'motion settings',
+                    'aria-expanded': String(open)
+                });
+                gear.onclick = () => {
+                    if (motionOpen.has(z.id)) motionOpen.delete(z.id);
+                    else motionOpen.add(z.id);
+                    renderZones();
+                };
+                modeCell.append(gear);
+            } else {
                 const set = el('button', {type: 'button', textContent: 'Set', title: 'Use the current camera view'});
                 set.onclick = async () => {
                     try {
@@ -544,11 +716,19 @@
                 });
                 go.onclick = () =>
                     api('POST', `/zones/${z.id}/view/goto`).catch((err) => msg('#zoneMsg', err.message, 'bad'));
-                view.title = `view: ${fmtPtz(z.mode.ptz)}`;
-                view.append(set, go);
-            } else {
-                view.textContent = '-';
+                modeCell.classList.add('view-cell');
+                modeCell.title = `view: ${fmtPtz(z.mode.ptz)}`;
+                modeCell.append(set, go);
             }
+
+            const prio = el('input', {
+                type: 'number',
+                step: 1,
+                value: z.priority,
+                className: 'narrow',
+                'aria-label': 'priority'
+            });
+            prio.onchange = () => saveZone(z, {priority: Number(prio.value)});
 
             // Update: re-read the region from Signal K and copy its polygon and name in.
             // Highlighted when the cached region differs from the zone's copy.
@@ -560,7 +740,8 @@
                     JSON.stringify(r.feature.geometry) !== JSON.stringify(z.geometry.polygon);
                 const upd = el('button', {
                     type: 'button',
-                    textContent: 'Update',
+                    textContent: '\u27F3',
+                    'aria-label': 'update from region',
                     className: stale ? 'stale' : '',
                     title: stale
                         ? 'The region has been edited since this zone copied it: copy it again'
@@ -585,21 +766,42 @@
 
             actions.append(del);
             tbody.append(
-                el('tr', {dataset: {zone: z.id}}, name, el('td', {}, mode), el('td', {}, prio), view, actions)
+                el(
+                    'tr',
+                    {dataset: {zone: z.id}},
+                    name,
+                    el('td', {className: 'cam-col'}, cam),
+                    modeCell,
+                    el('td', {}, prio),
+                    actions
+                )
             );
+            if (z.mode.type === 'followme' && motionOpen.has(z.id)) tbody.append(motionRow(z));
         }
 
-        // Add row: only regions this camera has no zone for.
-        const used = new Set(zones.map((z) => z.geometry.ref));
+        // Add row: the camera shown by default, and only regions that camera has no zone for.
+        const addCam = $('#zoneAdd [name=camera]');
+        fillSelect(
+            addCam,
+            state.cameras.map((c) => [c.id, c.name || c.id]),
+            {selected: state.cameras.some((c) => c.id === addCam.value) ? addCam.value : state.cameraId}
+        );
+        renderAddRegions();
+        $('#holdS').value = state.settings.holdS;
+    }
+
+    function renderAddRegions() {
+        const cameraId = $('#zoneAdd [name=camera]').value;
+        const used = new Set(state.zones.filter((z) => z.cameraId === cameraId).map((z) => z.geometry.ref));
         const free = byName(state.regions).filter(([id]) => !used.has(id));
         fillSelect(
             $('#zoneAdd [name=region]'),
             free.map(([id, r]) => [id, r.name || id]),
             {blank: free.length ? '(choose a region)' : '(all regions used)'}
         );
-        $('#zoneAddBtn').disabled = !state.cameraId || !free.length;
-        $('#holdS').value = state.settings.holdS;
+        $('#zoneAddBtn').disabled = !cameraId || !free.length;
     }
+    $('#zoneAdd [name=camera]').addEventListener('change', renderAddRegions);
 
     async function updateZoneFromRegion(z) {
         let r;
@@ -630,8 +832,8 @@
         if (!region) return msg('#zoneMsg', 'Choose a region for the zone.', 'bad');
         try {
             const z = await api('POST', '/zones', {
-                cameraId: state.cameraId,
-                mode: {type: $('#zoneAdd [name=mode]').value},
+                cameraId: $('#zoneAdd [name=camera]').value,
+                mode: modeBody($('#zoneAdd [name=mode]').value),
                 geometry: regionGeometry(id, region)
             });
             storeZone(z);
@@ -703,16 +905,22 @@
             if (followState.enabled && c) {
                 if (c.zone) {
                     const lastMove = c.last ? `, last ${c.last.ageS.toFixed(1)} s ago` : '';
-                    text = `following ${c.zone.name} (${c.zone.mode === 'fixed' ? 'fixed' : 'follow'}): ${c.reason}, ${c.sent} moves${lastMove}`;
+                    text = `following ${c.zone.name} (${zoneKind(c.zone)}): ${c.reason}, ${c.sent} moves${lastMove}`;
                 } else text = c.reason;
                 if (c.pausedS > 0) text = `paused (manual control) ${Math.ceil(c.pausedS)} s`;
                 if (c.pending) text += `; changing to ${c.pending.to ? c.pending.to.name : 'none'}`;
             }
-            $('#followStatus').textContent = `Follow: ${text}`;
+            const who = state.cameras.length > 1 && state.cameraId ? ` ${cameraName(state.cameraId)}` : '';
+            $('#followStatus').textContent = `Follow${who}: ${text}`;
             $('#resumeBtn').hidden = !(c && c.pausedS > 0);
-            const active = c && c.zone ? c.zone.id : null;
+            // Every camera's active zone is highlighted.
+            const active = new Set(
+                Object.values(followState.cameras)
+                    .filter((x) => x.zone)
+                    .map((x) => x.zone.id)
+            );
             document.querySelectorAll('#zones tbody tr[data-zone]').forEach((tr) => {
-                tr.classList.toggle('active', tr.dataset.zone === active);
+                tr.classList.toggle('active', active.has(tr.dataset.zone));
             });
         } catch (err) {
             if (err.status !== 401) $('#followStatus').textContent = `Follow: ${err.message}`;
@@ -723,6 +931,8 @@
     // ---- Follow live pop-up: the loop's view of the boat, zone and camera, twice a second
 
     const knots = (ms) => ms * 1.943844;
+    /** 'fixed', or 'follow' with its motion: 'follow, paced'. */
+    const zoneKind = (z) => (z.mode === 'fixed' ? 'fixed' : `follow, ${z.motion || 'deadband'}`);
     let liveTimer = null;
 
     /** Plain words for what the loop is doing (or why not). */
@@ -749,7 +959,8 @@
                     interval: 'waiting min interval',
                     moving: 'waiting for idle',
                     first: 'first move',
-                    keepalive: 'refreshing the view'
+                    keepalive: 'refreshing the view',
+                    paced: 'moving with the boat'
                 }[r] || r;
             return ['ok', `In ${c.zone.name}: ${what} (${why}).`];
         }
@@ -777,10 +988,7 @@
             c && c.range !== null ? `bearing ${fmtBearing(c.bearing)}  range ${fmtRange(c.range)}` : '-';
         $('#lvIn').textContent =
             c && c.inZones.length ? c.inZones.map((z) => `${z.name} (p${z.priority})`).join(', ') : 'none';
-        $('#lvZone').textContent =
-            c && c.zone
-                ? `${c.zone.name} (${c.zone.mode === 'fixed' ? 'fixed' : 'follow'}, p${c.zone.priority})`
-                : 'none';
+        $('#lvZone').textContent = c && c.zone ? `${c.zone.name} (${zoneKind(c.zone)}, p${c.zone.priority})` : 'none';
         $('#lvPending').textContent =
             c && c.pending
                 ? `to ${c.pending.to ? c.pending.to.name : 'none (release)'} in ${c.pending.remainingS.toFixed(1)} s`
@@ -804,6 +1012,8 @@
     }
 
     $('#liveBtn').addEventListener('click', () => {
+        $('#liveTitle').textContent =
+            state.cameras.length > 1 && state.cameraId ? `Follow live: ${cameraName(state.cameraId)}` : 'Follow live';
         $('#liveDlg').showModal();
         pollLive();
     });
@@ -873,15 +1083,21 @@
         state.cameras = s.cameras;
         state.zones = s.zones;
         state.settings = s.settings;
-        if (!state.cameras.some((c) => c.id === state.cameraId)) {
-            state.cameraId = state.cameras.length ? state.cameras[0].id : null;
-            $('#cameraForm').id.readOnly = false;
-            view.setCamera(state.cameraId);
-        }
-        renderCamera();
-        renderZones();
-        renderCalibration();
+        if (s.motion) state.motionDefaults = s.motion;
         renderFollow();
+        selectCamera(state.cameras.some((c) => c.id === state.cameraId) ? state.cameraId : initialCamera());
+    }
+
+    /** The camera this browser showed last, else the first. */
+    function initialCamera() {
+        let id = null;
+        try {
+            id = localStorage.getItem(CAMERA_KEY);
+        } catch {
+            // none remembered
+        }
+        if (state.cameras.some((c) => c.id === id)) return id;
+        return state.cameras.length ? state.cameras[0].id : null;
     }
 
     // ---- Calibration
@@ -1098,13 +1314,15 @@
             state.cameras = s.cameras;
             state.zones = s.zones;
             state.settings = s.settings;
-            state.cameraId = s.cameras.length ? s.cameras[0].id : null;
+            if (s.motion) state.motionDefaults = s.motion;
+            state.cameraId = initialCamera();
             setConn(state.cameraId ? 'connecting' : 'no camera', '');
         } catch (err) {
             if (err.status !== 401 && err.status !== 403) showError(err);
             return;
         }
         await loadResources();
+        renderCameraPick();
         renderCamera();
         renderZones();
         renderWaypointSelect();

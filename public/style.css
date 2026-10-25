@@ -476,6 +476,53 @@ header {
 #zones tbody tr.active td {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
+.camera-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.camera-pick[hidden] {
+    display: none;
+}
+#zoneAdd select[name='camera'],
+#zones select[aria-label='camera'] {
+    max-width: 100px;
+}
+#zones.one-camera .cam-col {
+    display: none;
+}
+.mode-cell {
+    white-space: nowrap;
+}
+#zones td button.gear {
+    margin-left: 3px;
+}
+#zones td button.gear.on {
+    background: color-mix(in srgb, var(--accent) 25%, var(--btn));
+}
+.motion-row td {
+    background: var(--bg);
+}
+.motion-params {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    padding: 4px 2px;
+}
+.motion-params label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.motion-params input.narrow {
+    width: 64px;
+}
+.motion-params .hint {
+    flex-basis: 100%;
+}
 #tuningPanel {
     padding: 10px 14px;
 }
