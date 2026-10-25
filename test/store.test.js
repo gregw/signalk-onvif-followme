@@ -452,3 +452,61 @@ test('corrupt state file starts empty instead of throwing', (t) => {
     assert.deepEqual(s.state.cameras, []);
     assert.match(logs[0], /unreadable/);
 });
+
+test('zone motion: validated, kept when left out, removed by null, round trips export', async (t) => {
+    const dir = tmp(t);
+    const s = new Store(dir).load();
+    await s.putCamera('apt', cam);
+    const geometry = {ref: 'r1', refName: 'Bay', polygon: square};
+    const z = await s.createZone({cameraId: 'apt', geometry});
+    assert.equal(z.mode.motion, undefined, 'none: deadband with the global settings');
+
+    const paced = await s.putZone(z.id, {
+        cameraId: 'apt',
+        mode: {type: 'followme', motion: {type: 'paced', lookaheadS: 3}}
+    });
+    assert.deepEqual(paced.mode.motion, {type: 'paced', lookaheadS: 3});
+    // The webapp's other zone edits send mode {type} only: motion stays.
+    const kept = await s.putZone(z.id, {cameraId: 'apt', priority: 4, mode: {type: 'followme'}});
+    assert.deepEqual(kept.mode.motion, {type: 'paced', lookaheadS: 3});
+    assert.equal(kept.priority, 4);
+
+    await assert.rejects(
+        s.putZone(z.id, {cameraId: 'apt', mode: {type: 'followme', motion: {type: 'paced', panDeadband: 0.1}}}),
+        (e) => e.status === 400 && /mode.motion.panDeadband is not a paced parameter/.test(e.message)
+    );
+    await assert.rejects(
+        s.putZone(z.id, {cameraId: 'apt', mode: {type: 'followme', motion: {type: 'deadband', panDeadband: 9}}}),
+        (e) => e.status === 400 && /panDeadband must be 0..0.5/.test(e.message)
+    );
+    assert.deepEqual(s.zone(z.id).mode.motion, {type: 'paced', lookaheadS: 3}, 'refused edits change nothing');
+
+    // Export, import elsewhere: motion comes along, still validated.
+    const file = s.exportData();
+    const other = new Store(tmp(t)).load();
+    await other.importData(file);
+    assert.deepEqual(other.zone(z.id).mode.motion, {type: 'paced', lookaheadS: 3});
+    const badFile = structuredClone(file);
+    badFile.zones[0].mode.motion = {type: 'warp'};
+    await assert.rejects(other.importData(badFile), /motion.type 'warp' not supported/);
+
+    const cleared = await s.putZone(z.id, {cameraId: 'apt', mode: {type: 'followme', motion: null}});
+    assert.equal(cleared.mode.motion, undefined);
+    const fixed = await s.putZone(z.id, {cameraId: 'apt', mode: {type: 'fixed'}});
+    assert.equal(fixed.mode.motion, undefined, 'fixed zones have no motion');
+});
+
+test('camera speedTable: optional, validated, kept when a save leaves it out', async (t) => {
+    const s = new Store(tmp(t)).load();
+    const table = [
+        [0.01, 0.01],
+        [1, 0.5]
+    ];
+    const c = await s.putCamera('apt', {...cam, speedTable: table});
+    assert.deepEqual(c.speedTable, table);
+    await s.putCamera('apt', {...cam, name: 'renamed'});
+    assert.deepEqual(s.camera('apt').speedTable, table, 'the webapp form does not send it');
+    await assert.rejects(s.putCamera('apt', {...cam, speedTable: [[0.5, 0.1]]}), /speedTable must be at least two/);
+    await s.putCamera('apt', {...cam, speedTable: null});
+    assert.equal(s.camera('apt').speedTable, undefined, 'null removes it');
+});

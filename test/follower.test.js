@@ -12,6 +12,7 @@ const g = require('../lib/engine/geometry');
 const {wrapPan} = require('../lib/engine/calibration');
 
 const TICK = 1000;
+const near = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
 const CAM = {latitude: -27.35, longitude: 153.25, height: 30};
 const rad = (d) => (d * Math.PI) / 180;
 const deg = (r) => (r * 180) / Math.PI;
@@ -106,7 +107,7 @@ async function setup(t, opts = {}) {
         }
     };
     const moves = () => fakes.flatMap((a) => a.calls.filter((c) => c[0] === 'absoluteMove').map((c) => c[1]));
-    return {store, follower, fix, run, moves, clock, setNow: (v) => (now = v), fixed};
+    return {store, follower, fix, run, moves, clock, setNow: (v) => (now = v), fixed, fakes};
 }
 
 test('off by default: nothing moves', async (t) => {
@@ -285,4 +286,96 @@ test('trace: one record per camera per tick while enabled, with the aim and what
     on = false;
     await run(3000);
     assert.equal(records.length, 3, 'nothing once disabled');
+});
+
+/** The wedge zone of setup() switched to paced, on a camera whose speed table matches the fake. */
+async function pacedSetup(t, motion = {}) {
+    const ctx = await setup(t);
+    const {store} = ctx;
+    const c1 = store.camera('c1');
+    await store.putCamera('c1', {
+        ...c1,
+        speedTable: [
+            [0.001, 0.001],
+            [1, 1]
+        ]
+    });
+    const wedge = store.state.zones.find((z) => z.geometry.refName === 'Wedge');
+    await store.putZone(wedge.id, {cameraId: 'c1', mode: {type: 'followme', motion: {type: 'paced', ...motion}}});
+    await store.putSettings({followEnabled: true, holdS: 0});
+    return ctx;
+}
+
+test('paced zone: a move every tick, speed per axis from the rate, camera stays on the boat', async (t) => {
+    const {follower, fix, run, fakes} = await pacedSetup(t);
+    // 5 m/s along the 1000 m arc, as in the deadband test: 0.0016 pan units/s.
+    let b = 170;
+    const rad1000 = (5 / 1000) * (180 / Math.PI); // degrees per second
+    const step = () => {
+        b += (rad1000 * TICK) / 1000;
+        fix(at(b, 1000), rad(b + 90), 5);
+    };
+    await run(30000, step);
+    const absMoves = fakes[0].calls.filter((c) => c[0] === 'absoluteMove');
+    assert.equal(absMoves.length, 30, 'one move per tick, no deadband pauses');
+    for (const c of absMoves)
+        assert.ok(c[2] && c[2].x > 0 && c[2].x <= 1 && c[2].zoom === 1, `speed ${JSON.stringify(c[2])}`);
+    // Steady state: the pan speed is the boat's bearing rate (the fake's speed is its rate).
+    const steady = absMoves.slice(10).map((c) => c[2].x);
+    const want = rad1000 / 180;
+    for (const sp of steady) near(sp, want, want * 0.15, 'pan speed tracks the bearing rate');
+    // The camera itself (fake position) is on the boat, give or take one tick of travel.
+    const st = await fakes[0].getStatus();
+    const boat = truePtz(at(b, 1000));
+    near(st.x, boat.x, 0.002, 'pan on the boat');
+    near(st.y, boat.y, 0.002, 'tilt on the boat');
+    assert.equal(follower.status().cameras.c1.reason, 'paced');
+    assert.equal(follower.status().cameras.c1.zone.motion, 'paced');
+});
+
+test('paced zone: status failure falls back to the last target; trace shows the motion', async (t) => {
+    const records = [];
+    const ctx = await setup(t, {trace: {enabled: () => true, write: (r) => records.push(r)}});
+    const {store, follower, fix, run, fakes} = ctx;
+    const wedge = store.state.zones.find((z) => z.geometry.refName === 'Wedge');
+    await store.putZone(wedge.id, {cameraId: 'c1', mode: {type: 'followme', motion: {type: 'paced', lookaheadS: 4}}});
+    await store.putSettings({followEnabled: true, holdS: 0});
+    fix(at(200, 1000));
+    await run(TICK);
+    const first = records.at(-1);
+    assert.equal(first.reason, 'paced', 'status read: rate from where the camera is');
+    assert.deepEqual(first.motion, {
+        type: 'paced',
+        params: {lookaheadS: 4, maxSpeed: 1, zoomDeadband: 0.02, zoomSpeed: 1}
+    });
+    assert.ok(first.status && Number.isFinite(first.status.x));
+    assert.ok(first.speed && first.rate);
+
+    follower.cameras.status = async () => {
+        throw new Error('timeout');
+    };
+    fix(at(201, 1000));
+    await run(TICK);
+    const r = records.at(-1);
+    assert.equal(r.reason, 'paced');
+    assert.equal(r.status, null);
+    // From the last target: 1 degree of bearing (1/180 units) over 4 s.
+    near(r.rate.x, 1 / 180 / 4, 1e-4, 'rate from the last target');
+    assert.equal(fakes[0].calls.filter((c) => c[0] === 'absoluteMove').length, 2);
+});
+
+test('a deadband zone takes its own parameters over the global settings', async (t) => {
+    const {store, fix, run, moves} = await setup(t);
+    const wedge = store.state.zones.find((z) => z.geometry.refName === 'Wedge');
+    // A huge zone pan deadband: after the first move, a 3 degree shift is held.
+    await store.putZone(wedge.id, {
+        cameraId: 'c1',
+        mode: {type: 'followme', motion: {type: 'deadband', panDeadband: 0.1, leadS: 0}}
+    });
+    await store.putSettings({followEnabled: true, holdS: 0, panDeadband: 0.003});
+    fix(at(200, 1000));
+    await run(TICK);
+    fix(at(203, 1000));
+    await run(3000);
+    assert.equal(moves().length, 1, 'held by the zone deadband, not the global one');
 });

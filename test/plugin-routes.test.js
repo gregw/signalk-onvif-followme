@@ -45,6 +45,8 @@ test('camera CRUD never returns the password', async () => {
     assert.equal(put.body.conn.passwordSet, true);
     const st = await call('GET', '/state');
     assert.doesNotMatch(JSON.stringify(st.body), /"pw"/);
+    assert.deepEqual(st.body.motion.paced, {lookaheadS: 2, maxSpeed: 1, zoomDeadband: 0.02, zoomSpeed: 1});
+    assert.ok(st.body.motion.deadband.includes('panDeadband'));
     assert.equal((await call('PUT', '/cameras/bad id!', CAMERA)).status, 400);
 });
 

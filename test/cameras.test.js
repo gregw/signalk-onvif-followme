@@ -94,3 +94,17 @@ test('changed connection config replaces the adapter; concurrent snapshots share
     assert.equal(made[2].calls.filter((c) => c[0] === 'fetchSnapshot').length, 1);
     assert.equal(a.contentType, 'image/jpeg');
 });
+
+test('absolute move speed: one for all axes, or per axis; validated', async () => {
+    const {m, made} = manager();
+    await m.move(cam, {mode: 'absolute', x: 0.5, y: 0, zoom: 0, speed: 0.2});
+    await m.move(cam, {mode: 'absolute', x: 0.5, y: 0, zoom: 0, speed: {x: 0.01, y: 0.03, zoom: 1}});
+    const sent = made[0].calls.filter((c) => c[0] === 'absoluteMove').map((c) => c[2]);
+    assert.deepEqual(sent, [
+        {x: 0.2, y: 0.2, zoom: 0.2},
+        {x: 0.01, y: 0.03, zoom: 1}
+    ]);
+    for (const speed of [0, 2, {x: 0.1, y: 0.1}, {x: 0.1, y: 0, zoom: 1}, 'fast']) {
+        await assert.rejects(m.move(cam, {mode: 'absolute', x: 0, y: 0, zoom: 0, speed}), /speed must be 0..1/);
+    }
+});
