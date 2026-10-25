@@ -3,7 +3,8 @@
  * Fake ONVIF camera implementing the CameraAdapter interface on a clock.
  *
  * mode:
- *  'honest'   AbsoluteMove reaches the target, ContinuousMove moves until Stop or timeout
+ *  'honest'   AbsoluteMove reaches the target (at speed x SPEED when a speed is given),
+ *             ContinuousMove moves until Stop or timeout; an axis it omits keeps its velocity
  *  'ack-only' accepts every move, never changes position
  *  'no-pos'   GetStatus has no Position
  *
@@ -15,6 +16,7 @@ const SPEED = 0.001; // normalised units per ms
 function fakeCamera(mode = 'honest', {clock = Date.now, start = {x: 0.1, y: 0, zoom: 0}} = {}) {
     const pos = {...start};
     let target = null;
+    let targetSpeed = null;
     let vel = null;
     let velUntil = Infinity;
     let last = clock();
@@ -34,7 +36,8 @@ function fakeCamera(mode = 'honest', {clock = Date.now, start = {x: 0.1, y: 0, z
         } else if (target) {
             for (const k of ['x', 'y', 'zoom']) {
                 const d = target[k] - pos[k];
-                pos[k] += Math.sign(d) * Math.min(Math.abs(d), SPEED * dt);
+                const rate = SPEED * (targetSpeed ? targetSpeed[k] : 1);
+                pos[k] += Math.sign(d) * Math.min(Math.abs(d), rate * dt);
             }
         }
     }
@@ -89,11 +92,12 @@ function fakeCamera(mode = 'honest', {clock = Date.now, start = {x: 0.1, y: 0, z
                 moveStatus: moving ? 'MOVING' : 'IDLE'
             };
         },
-        async absoluteMove(p) {
+        async absoluteMove(p, speed) {
             advance();
-            calls.push(['absoluteMove', p]);
+            calls.push(['absoluteMove', p, ...(speed ? [speed] : [])]);
             vel = null;
             target = {...p};
+            targetSpeed = speed || null;
         },
         async relativeMove(d) {
             advance();
@@ -105,7 +109,8 @@ function fakeCamera(mode = 'honest', {clock = Date.now, start = {x: 0.1, y: 0, z
             advance();
             calls.push(['continuousMove', v, timeoutMs]);
             target = null;
-            vel = v;
+            const keep = (k) => (v[k] === undefined ? (vel ? vel[k] : 0) : v[k]);
+            vel = {x: keep('x'), y: keep('y'), zoom: keep('zoom')};
             velUntil = timeoutMs ? clock() + timeoutMs : Infinity;
         },
         async stop() {

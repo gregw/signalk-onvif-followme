@@ -49,9 +49,12 @@ node tools/ptz.js --host 192.0.2.64 status
 node tools/ptz.js --host 192.0.2.64 abs 0.2 -0.1 0
 node tools/ptz.js --host 192.0.2.64 jog 0.3 0 0 1000
 node tools/ptz.js --host 192.0.2.64 snapshot snap.jpg
+
+# How the camera moves: speed curves, smoothness of resent and chained moves (about 10 minutes)
+node tools/motion-probe.js --host 192.0.2.64
 ```
 
-Username and password are prompted for on the terminal (`--user` skips the username prompt). The probe writes `reports/<timestamp>/report.md`, `report.json` (with every raw SOAP response) and a snapshot per library. Exit code 2 means the camera failed the AbsoluteMove test (test 5), which the plugin depends on.
+Username and password are prompted for on the terminal (`--user` skips the username prompt). The probe writes `reports/<timestamp>/report.md`, `report.json` (with every raw SOAP response) and a snapshot per library. Exit code 2 means the camera failed the AbsoluteMove test (test 5), which the plugin depends on. The motion probe writes `reports/<timestamp>-motion/motion.md` and `motion.json` (with every GetStatus sample).
 
 ## Debugging the aim
 
