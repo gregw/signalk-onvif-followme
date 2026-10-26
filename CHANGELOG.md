@@ -2,7 +2,7 @@
 
 Notable changes to signalk-onvif-followme. Versions follow [semver](https://semver.org/); prereleases (`-dev.N`) are published under the npm `dev` tag.
 
-## Unreleased
+## 0.4.0 (2026-10-26)
 
 - Camera tools: `tools/motion-probe.js` measures how the camera moves (ContinuousMove speed curves, resend and speed change smoothness, zoom during pan, AbsoluteMove speed and chaining).
 - agsh backend: a ContinuousMove that omits pan/tilt or zoom leaves it out of the request instead of sending 0.
