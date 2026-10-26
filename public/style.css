@@ -517,8 +517,10 @@ header {
     gap: 6px;
     font-size: 13px;
 }
-.motion-params input.narrow {
-    width: 64px;
+.motion-params input.narrow,
+#zones .motion-params input.narrow {
+    /* Room for a value like 0.0025 plus the number spinner. */
+    width: 88px;
 }
 .motion-params .hint {
     flex-basis: 100%;

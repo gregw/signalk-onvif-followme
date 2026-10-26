@@ -710,6 +710,9 @@ test('two cameras: add, switch, a zone each, motion editor, paced follow, delete
         await params.waitFor();
         assert.equal(await params.locator('[name=lookaheadS]').getAttribute('placeholder'), '2');
         assert.equal(await params.locator('[name=panDeadband]').count(), 0, 'paced has no deadbands');
+        // Wide enough for a value and the number spinner.
+        const w = await params.locator('[name=lookaheadS]').evaluate((e) => e.getBoundingClientRect().width);
+        assert.ok(w >= 80, `motion input ${w}px wide`);
         await params.locator('[name=lookaheadS]').fill('3');
         await params.locator('[name=lookaheadS]').press('Enter');
         await page.locator('#zoneMsg', {hasText: 'Saved motion for Harbour'}).waitFor();
